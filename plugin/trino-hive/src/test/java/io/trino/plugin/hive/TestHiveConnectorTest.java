@@ -4588,8 +4588,8 @@ public class TestHiveConnectorTest
     @Test
     public void schemaMismatchesWithDereferenceProjections()
     {
-        for (TestingHiveStorageFormat format : getAllTestingHiveStorageFormat()) {
-            schemaMismatchesWithDereferenceProjections(format.getFormat());
+        for (HiveStorageFormat format : ImmutableList.of(HiveStorageFormat.PARQUET)) {
+            schemaMismatchesWithDereferenceProjections(format);
         }
     }
 
@@ -4671,6 +4671,76 @@ public class TestHiveConnectorTest
                 assertUpdate("DROP TABLE IF EXISTS evolve_test");
             }
         }
+    }
+
+    @Test
+    public void testParquetSchemaEvolution()
+    {
+        HiveStorageFormat format = HiveStorageFormat.PARQUET;
+
+        try {
+            assertUpdate("CREATE TABLE test_schema_evolution_add (col0 INTEGER, col1 INTEGER, col2 INTEGER) with (format = '" + format + "')");
+            assertUpdate("INSERT INTO test_schema_evolution_add VALUES (0, 1, 2)", 1);
+            assertQuery("SELECT * FROM test_schema_evolution_add", "VALUES(0, 1, 2)");
+            assertUpdate("ALTER TABLE test_schema_evolution_add ADD COLUMN col3 INTEGER");
+            assertQuery("SELECT * FROM test_schema_evolution_add", "VALUES(0, 1, 2, NULL)");
+            assertUpdate("INSERT INTO test_schema_evolution_add VALUES (3, 4, 5, 6)", 1);
+            assertQuery("SELECT * FROM test_schema_evolution_add", "VALUES(0, 1, 2, NULL), (3, 4, 5, 6)");
+        }
+        finally {
+            assertUpdate("DROP TABLE IF EXISTS test_schema_evolution_add");
+        }
+
+        try {
+            /*Session sessionUsingColumnName = Session.builder(getSession())
+                    .setCatalogSessionProperty(catalog, "parquet_use_column_names", "true")
+                    .build();*/
+            assertUpdate("CREATE TABLE test_schema_evolution_drop (col0 INTEGER, col1 INTEGER, col2 INTEGER) with (format = '" + format + "')");
+            assertUpdate("INSERT INTO test_schema_evolution_drop VALUES (0, 1, 2)", 1);
+            assertQuery("SELECT * FROM test_schema_evolution_drop", "VALUES(0, 1, 2)");
+            assertUpdate("ALTER TABLE test_schema_evolution_drop DROP COLUMN col2");
+            assertQuery("SELECT * FROM test_schema_evolution_drop", "VALUES(0, 1)");
+            assertUpdate("ALTER TABLE test_schema_evolution_drop ADD COLUMN col3 INTEGER");
+            assertQuery("SELECT col1, col3 FROM test_schema_evolution_drop", "VALUES(1, NULL)");
+            assertUpdate("INSERT INTO test_schema_evolution_drop VALUES (3, 4, 5)", 1);
+            assertQuery("SELECT * FROM test_schema_evolution_drop", "VALUES(0, 1, NULL), (3, 4, 5)");
+        }
+        finally {
+            assertUpdate("DROP TABLE IF EXISTS test_schema_evolution_drop");
+        }
+    }
+
+    @Test
+    public void testUseColumnRenames()
+    {
+        HiveStorageFormat format = HiveStorageFormat.PARQUET;
+        boolean formatUseColumnNames = true;
+        String lowerCaseFormat = format.name().toLowerCase(Locale.ROOT);
+        Session.SessionBuilder builder = Session.builder(getSession());
+        if (format == HiveStorageFormat.ORC || format == HiveStorageFormat.PARQUET) {
+            builder.setCatalogSessionProperty(catalog, lowerCaseFormat + "_use_column_names", String.valueOf(formatUseColumnNames));
+        }
+        Session admin = builder.build();
+        String tableName = format("test_renames_%s_%s_%s", lowerCaseFormat, formatUseColumnNames, randomTableSuffix());
+        assertUpdate(admin, format("CREATE TABLE %s (uid BIGINT, old_name VARCHAR, age INT, state VARCHAR) WITH (format = '%s', partitioned_by = ARRAY['state'])", tableName, format));
+        assertUpdate(admin, format("INSERT INTO %s VALUES(111, 'Katy', 57, 'CA')", tableName), 1);
+        assertQuery(admin, "SELECT * FROM " + tableName, "VALUES(111, 'Katy', 57, 'CA')");
+
+        assertUpdate(admin, format("ALTER TABLE %s RENAME COLUMN old_name TO new_name", tableName));
+
+        boolean canSeeOldData = !formatUseColumnNames && !NAMED_COLUMN_ONLY_FORMATS.contains(format);
+
+        String katyValue = canSeeOldData ? "'Katy'" : "null";
+        assertQuery(admin, "SELECT * FROM " + tableName, format("VALUES(111, %s, 57, 'CA')", katyValue));
+
+        assertUpdate(admin, format("INSERT INTO %s (uid, new_name, age, state) VALUES(333, 'Cary', 35, 'WA')", tableName), 1);
+        assertQuery(admin, "SELECT * FROM " + tableName, format("VALUES(111, %s, 57, 'CA'), (333, 'Cary', 35, 'WA')", katyValue));
+
+        assertUpdate(admin, format("ALTER TABLE %s RENAME COLUMN new_name TO old_name", tableName));
+        String caryValue = canSeeOldData ? "'Cary'" : null;
+        assertQuery(admin, "SELECT * FROM " + tableName, format("VALUES(111, 'Katy', 57, 'CA'), (333, %s, 35, 'WA')", caryValue));
+
+        assertUpdate("DROP TABLE " + tableName);
     }
 
     @Test
