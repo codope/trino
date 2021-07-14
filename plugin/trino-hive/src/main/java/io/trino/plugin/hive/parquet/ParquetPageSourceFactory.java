@@ -34,6 +34,9 @@ import io.trino.plugin.hive.HivePageSourceFactory;
 import io.trino.plugin.hive.ReaderColumns;
 import io.trino.plugin.hive.ReaderPageSource;
 import io.trino.plugin.hive.acid.AcidTransaction;
+import io.trino.plugin.hive.schema.HoodieSchemaHistory;
+import io.trino.plugin.hive.schema.HoodieSchemaMetadata;
+import io.trino.plugin.hive.schema.SchemaModificationType;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorPageSource;
 import io.trino.spi.connector.ConnectorSession;
@@ -45,7 +48,16 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hdfs.BlockMissingException;
+import org.apache.hudi.common.model.HoodieCommitMetadata;
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.TableSchemaResolver;
+import org.apache.hudi.common.table.timeline.HoodieActiveTimeline;
+import org.apache.hudi.common.table.timeline.HoodieInstant;
+import org.apache.hudi.exception.InvalidTableException;
 import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.format.converter.ParquetMetadataConverter;
+import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.FileMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
@@ -65,6 +77,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Properties;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Strings.nullToEmpty;
@@ -87,6 +100,9 @@ import static io.trino.plugin.hive.HiveSessionProperties.isParquetIgnoreStatisti
 import static io.trino.plugin.hive.HiveSessionProperties.isUseParquetColumnNames;
 import static io.trino.plugin.hive.parquet.ParquetColumnIOConverter.constructField;
 import static io.trino.plugin.hive.util.HiveUtil.getDeserializerClassName;
+import static io.trino.plugin.hive.util.HiveUtil.getInputFormat;
+import static io.trino.plugin.hive.util.HiveUtil.isHudiParquetInputFormat;
+import static io.trino.plugin.hive.util.HiveUtil.shouldUseRecordReaderFromInputFormat;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toUnmodifiableList;
@@ -132,7 +148,7 @@ public class ParquetPageSourceFactory
             boolean originalFile,
             AcidTransaction transaction)
     {
-        if (!PARQUET_SERDE_CLASS_NAMES.contains(getDeserializerClassName(schema))) {
+        if (!PARQUET_SERDE_CLASS_NAMES.contains(getDeserializerClassName(schema)) || shouldUseRecordReaderFromInputFormat(configuration, schema)) {
             return Optional.empty();
         }
 
@@ -152,7 +168,8 @@ public class ParquetPageSourceFactory
                 timeZone,
                 stats,
                 options.withIgnoreStatistics(isParquetIgnoreStatistics(session))
-                        .withMaxReadBlockSize(getParquetMaxReadBlockSize(session))));
+                        .withMaxReadBlockSize(getParquetMaxReadBlockSize(session)),
+                isHudiParquetInputFormat(getInputFormat(configuration, schema, false))));
     }
 
     /**
@@ -171,7 +188,8 @@ public class ParquetPageSourceFactory
             String user,
             DateTimeZone timeZone,
             FileFormatDataSourceStats stats,
-            ParquetReaderOptions options)
+            ParquetReaderOptions options,
+            boolean isHudiParquetInputFormat)
     {
         // Ignore predicates on partial columns for now.
         effectivePredicate = effectivePredicate.filter((column, domain) -> column.isBaseColumn());
@@ -189,20 +207,36 @@ public class ParquetPageSourceFactory
             ParquetMetadata parquetMetadata = MetadataReader.readFooter(dataSource);
             FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
             fileSchema = fileMetaData.getSchema();
-
-            Optional<MessageType> message = projectSufficientColumns(columns)
-                    .map(projection -> projection.get().stream()
-                            .map(HiveColumnHandle.class::cast)
-                            .collect(toUnmodifiableList()))
-                    .orElse(columns).stream()
-                    .filter(column -> column.getColumnType() == REGULAR)
-                    .map(column -> getColumnType(column, fileSchema, useColumnNames))
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .map(type -> new MessageType(fileSchema.getName(), type))
-                    .reduce(MessageType::union);
-
-            requestedSchema = message.orElse(new MessageType(fileSchema.getName(), ImmutableList.of()));
+            Optional<MessageType> messageType;
+            // TODO: change this after full integration
+            if (isHudiParquetInputFormat) {
+                Map<String, HoodieSchemaMetadata> schemaHistory = getSchemaHistory(configuration, path.getParent().toString());
+                messageType = projectSufficientColumns(columns)
+                        .map(projection -> projection.get().stream()
+                                .map(HiveColumnHandle.class::cast)
+                                .collect(toUnmodifiableList()))
+                        .orElse(columns).stream()
+                        .filter(column -> column.getColumnType() == REGULAR)
+                        .map(column -> mergeColumn(column, fileSchema, useColumnNames, schemaHistory))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .map(type -> new MessageType(fileSchema.getName(), type))
+                        .reduce(MessageType::union);
+            }
+            else {
+                messageType = projectSufficientColumns(columns)
+                        .map(projection -> projection.get().stream()
+                                .map(HiveColumnHandle.class::cast)
+                                .collect(toUnmodifiableList()))
+                        .orElse(columns).stream()
+                        .filter(column -> column.getColumnType() == REGULAR)
+                        .map(column -> getColumnType(column, fileSchema, useColumnNames))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .map(type -> new MessageType(fileSchema.getName(), type))
+                        .reduce(MessageType::union);
+            }
+            requestedSchema = messageType.orElse(new MessageType(fileSchema.getName(), ImmutableList.of()));
             messageColumn = getColumnIO(fileSchema, requestedSchema);
 
             ImmutableList.Builder<BlockMetaData> footerBlocks = ImmutableList.builder();
@@ -261,9 +295,9 @@ public class ParquetPageSourceFactory
 
         Optional<ReaderColumns> readerProjections = projectBaseColumns(columns);
         List<HiveColumnHandle> baseColumns = readerProjections.map(projection ->
-                projection.get().stream()
-                        .map(HiveColumnHandle.class::cast)
-                        .collect(toUnmodifiableList()))
+                        projection.get().stream()
+                                .map(HiveColumnHandle.class::cast)
+                                .collect(toUnmodifiableList()))
                 .orElse(columns);
 
         for (HiveColumnHandle column : baseColumns) {
@@ -290,6 +324,91 @@ public class ParquetPageSourceFactory
 
         ConnectorPageSource parquetPageSource = new ParquetPageSource(parquetReader, prestoTypes.build(), internalFields.build());
         return new ReaderPageSource(parquetPageSource, readerProjections);
+    }
+
+    private static Map<String, HoodieSchemaMetadata> getSchemaHistory(Configuration conf, String tablePath)
+            throws Exception
+    {
+        try {
+            HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setConf(conf).setBasePath(tablePath).build();
+            TableSchemaResolver schemaResolver = new TableSchemaResolver(metaClient);
+            HoodieActiveTimeline activeTimeline = metaClient.getActiveTimeline();
+            if (HoodieTableType.COPY_ON_WRITE.equals(metaClient.getTableType())) {
+                // If this is COW, get the last commit and read the schema from a file written in the
+                // last commit
+                HoodieInstant lastCommit =
+                        activeTimeline.getCommitsTimeline().filterCompletedInstants().lastInstant().orElseThrow(() -> new InvalidTableException(metaClient.getBasePath()));
+                HoodieCommitMetadata commitMetadata = HoodieCommitMetadata
+                        .fromBytes(activeTimeline.getInstantDetails(lastCommit).get(), HoodieCommitMetadata.class);
+                String filePath = commitMetadata.getFileIdAndFullPaths(metaClient.getBasePath()).values().stream().findAny()
+                        .orElseThrow(() -> new IllegalArgumentException("Could not find any data file written for commit "
+                                + lastCommit + ", could not get schema for table " + metaClient.getBasePath() + ", Metadata :"
+                                + commitMetadata));
+                MessageType fileSchema = schemaResolver.getTableParquetSchema();
+                return readSchemaFromBaseFile(new Path(filePath), metaClient);
+            }
+        }
+        catch (Exception e) {
+            return new HoodieSchemaHistory().getFullSchemaHistory();
+        }
+        return ImmutableMap.of();
+    }
+
+    private static Map<String, HoodieSchemaMetadata> readSchemaFromBaseFile(Path parquetFilePath, HoodieTableMetaClient metaClient)
+            throws IOException
+    {
+        Map<String, HoodieSchemaMetadata> schemaHistory = new HoodieSchemaHistory().getFullSchemaHistory();
+        FileSystem fs = metaClient.getRawFs();
+        if (!fs.exists(parquetFilePath)) {
+            throw new IllegalArgumentException(
+                    "Failed to read schema from data file " + parquetFilePath + ". File does not exist.");
+        }
+        ParquetMetadata fileFooter =
+                ParquetFileReader.readFooter(fs.getConf(), parquetFilePath, ParquetMetadataConverter.NO_FILTER);
+        MessageType fileSchema = fileFooter.getFileMetaData().getSchema();
+        return schemaHistory;
+    }
+
+    private static Optional<org.apache.parquet.schema.Type> mergeColumn(HiveColumnHandle column, MessageType fileSchema, boolean useParquetColumnNames, Map<String, HoodieSchemaMetadata> schemaHistory)
+    {
+        Optional<org.apache.parquet.schema.Type> columnType = getParquetTypeForHudiTable(column, fileSchema, useParquetColumnNames, schemaHistory);
+        if (columnType.isEmpty() || column.getHiveColumnProjectionInfo().isEmpty()) {
+            return columnType;
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<org.apache.parquet.schema.Type> getParquetTypeForHudiTable(HiveColumnHandle column, MessageType messageType, boolean useParquetColumnNames, Map<String, HoodieSchemaMetadata> schemaHistory)
+    {
+        if (useParquetColumnNames) {
+            org.apache.parquet.schema.Type columnType = getParquetTypeByName(column.getBaseColumnName(), messageType);
+            if (columnType == null) {
+                List<String> hoodieSchemaMetadata = schemaHistory.entrySet()
+                        .stream()
+                        .filter(entry -> isRenameAfterCommitTime(entry, SchemaModificationType.ALTER_COLUMN_NAME, column))
+                        .map(entry -> entry.getValue().getSchemaModification().getOldField().getName())
+                        .collect(Collectors.toList());
+                for (String columnName : hoodieSchemaMetadata) {
+                    return messageType.getFields().stream().filter(f -> f.getName().equalsIgnoreCase(columnName)).findAny();
+                }
+            }
+        }
+
+        if (column.getBaseHiveColumnIndex() < messageType.getFieldCount()) {
+            return Optional.of(messageType.getType(column.getBaseHiveColumnIndex()));
+        }
+
+        return Optional.empty();
+    }
+
+    private static boolean isRenameAfterCommitTime(Entry<String, HoodieSchemaMetadata> entry, SchemaModificationType schemaModificationType, HiveColumnHandle column)
+    {
+        HoodieSchemaMetadata schemaMetadata = entry.getValue();
+        if (schemaMetadata != null && schemaMetadata.getSchemaModification() != null) {
+            return schemaModificationType.equals(schemaMetadata.getSchemaModification().getSchemaModificationType())
+                    && column.getBaseColumnName().equals(schemaMetadata.getSchemaModification().getNewField().getName());
+        }
+        return false;
     }
 
     public static Optional<org.apache.parquet.schema.Type> getParquetType(GroupType groupType, boolean useParquetColumnNames, HiveColumnHandle column)

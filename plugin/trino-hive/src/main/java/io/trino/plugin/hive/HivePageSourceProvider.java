@@ -174,7 +174,8 @@ public class HivePageSourceProvider
                 hiveSplit.isS3SelectPushdownEnabled(),
                 hiveSplit.getAcidInfo(),
                 originalFile,
-                hiveTable.getTransaction());
+                hiveTable.getTransaction(),
+                hiveSplit.getCustomSplitInfo());
 
         if (pageSource.isPresent()) {
             ConnectorPageSource source = pageSource.get();
@@ -228,7 +229,8 @@ public class HivePageSourceProvider
             boolean s3SelectPushdownEnabled,
             Optional<AcidInfo> acidInfo,
             boolean originalFile,
-            AcidTransaction transaction)
+            AcidTransaction transaction,
+            Map<String, String> customSplitInfo)
     {
         if (effectivePredicate.isNone()) {
             return Optional.of(new EmptyPageSource());
@@ -302,7 +304,8 @@ public class HivePageSourceProvider
                     desiredColumns,
                     effectivePredicate,
                     typeManager,
-                    s3SelectPushdownEnabled);
+                    s3SelectPushdownEnabled,
+                    customSplitInfo);
 
             if (readerWithProjections.isPresent()) {
                 RecordCursor delegate = readerWithProjections.get().getRecordCursor();

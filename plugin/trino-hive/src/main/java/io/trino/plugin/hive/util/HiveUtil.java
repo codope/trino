@@ -14,6 +14,7 @@
 package io.trino.plugin.hive.util;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
 import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
@@ -73,6 +74,9 @@ import org.apache.hadoop.mapred.RecordReader;
 import org.apache.hadoop.mapred.Reporter;
 import org.apache.hadoop.mapred.TextInputFormat;
 import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hudi.hadoop.HoodieParquetInputFormat;
+import org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat;
+import org.apache.hudi.hadoop.realtime.HoodieRealtimeFileSplit;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.DateTimeFormatterBuilder;
@@ -83,12 +87,15 @@ import org.joda.time.format.ISODateTimeFormat;
 import javax.annotation.Nullable;
 
 import java.io.IOException;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Properties;
@@ -100,6 +107,7 @@ import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Lists.transform;
 import static io.trino.plugin.hive.HiveColumnHandle.ColumnType.PARTITION_KEY;
 import static io.trino.plugin.hive.HiveColumnHandle.ColumnType.REGULAR;
 import static io.trino.plugin.hive.HiveColumnHandle.bucketColumnHandle;
@@ -127,6 +135,7 @@ import static io.trino.plugin.hive.HiveTableProperties.ORC_BLOOM_FILTER_FPP;
 import static io.trino.plugin.hive.HiveType.toHiveTypes;
 import static io.trino.plugin.hive.util.ConfigurationUtils.copy;
 import static io.trino.plugin.hive.util.ConfigurationUtils.toJobConf;
+import static io.trino.plugin.hive.util.CustomSplitConversionUtils.recreateSplitWithCustomInfo;
 import static io.trino.plugin.hive.util.HiveBucketing.bucketedOnTimestamp;
 import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
@@ -160,6 +169,7 @@ import static org.apache.hadoop.hive.serde.serdeConstants.DECIMAL_TYPE_NAME;
 import static org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_LIB;
 import static org.apache.hadoop.hive.serde2.ColumnProjectionUtils.READ_ALL_COLUMNS;
 import static org.apache.hadoop.hive.serde2.ColumnProjectionUtils.READ_COLUMN_IDS_CONF_STR;
+import static org.apache.hadoop.hive.serde2.ColumnProjectionUtils.READ_COLUMN_NAMES_CONF_STR;
 import static org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector.Category;
 
 public final class HiveUtil
@@ -201,7 +211,7 @@ public final class HiveUtil
     {
     }
 
-    public static RecordReader<?, ?> createRecordReader(Configuration configuration, Path path, long start, long length, Properties schema, List<HiveColumnHandle> columns)
+    public static RecordReader<?, ?> createRecordReader(Configuration configuration, Path path, long start, long length, Properties schema, List<HiveColumnHandle> columns, Map<String, String> customSplitInfo)
     {
         // determine which hive columns we will read
         List<HiveColumnHandle> readColumns = columns.stream()
@@ -223,9 +233,21 @@ public final class HiveUtil
         JobConf jobConf = toJobConf(configuration);
         FileSplit fileSplit = new FileSplit(path, start, length, (String[]) null);
 
-        // propagate serialization configuration to getRecordReader
+        // Only propagate serialization schema configs by default
+        Predicate<String> schemaFilter = schemaProperty -> schemaProperty.startsWith("serialization.");
+        if (!customSplitInfo.isEmpty() && isHudiRealtimeSplit(customSplitInfo)) {
+            fileSplit = recreateSplitWithCustomInfo(fileSplit, customSplitInfo);
+
+            // Add additional column information for record reader
+            List<String> readHiveColumnNames = ImmutableList.copyOf(transform(readColumns, HiveColumnHandle::getName));
+            jobConf.set(READ_COLUMN_NAMES_CONF_STR, Joiner.on(',').join(readHiveColumnNames));
+
+            // Remove filter when using customSplitInfo as the record reader requires complete schema configs
+            schemaFilter = schemaProperty -> true;
+        }
+
         schema.stringPropertyNames().stream()
-                .filter(name -> name.startsWith("serialization."))
+                .filter(schemaFilter)
                 .forEach(name -> jobConf.set(name, schema.getProperty(name)));
 
         configureCompressionCodecs(jobConf);
@@ -265,6 +287,37 @@ public final class HiveUtil
     {
         configuration.set(READ_COLUMN_IDS_CONF_STR, Joiner.on(',').join(readHiveColumnIndexes));
         configuration.setBoolean(READ_ALL_COLUMNS, false);
+    }
+
+    public static boolean shouldUseRecordReaderFromInputFormat(Configuration configuration, Properties schema)
+    {
+        InputFormat<?, ?> inputFormat = HiveUtil.getInputFormat(configuration, schema, false);
+        return Arrays.stream(inputFormat.getClass().getAnnotations())
+                .map(Annotation::annotationType)
+                .map(Class::getSimpleName)
+                .anyMatch(name -> name.equals("UseRecordReaderFromInputFormat"));
+    }
+
+    public static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)
+    {
+        if (inputFormat instanceof HoodieParquetRealtimeInputFormat) {
+            return false;
+        }
+        return inputFormat instanceof HoodieParquetInputFormat;
+    }
+
+    public static boolean shouldUseFileSplitsFromInputFormat(InputFormat<?, ?> inputFormat)
+    {
+        return Arrays.stream(inputFormat.getClass().getAnnotations())
+                .map(Annotation::annotationType)
+                .map(Class::getSimpleName)
+                .anyMatch(name -> name.equals("UseFileSplitsFromInputFormat"));
+    }
+
+    private static boolean isHudiRealtimeSplit(Map<String, String> customSplitInfo)
+    {
+        String customSplitClass = customSplitInfo.get(HudiRealtimeSplitConverter.CUSTOM_SPLIT_CLASS_KEY);
+        return HoodieRealtimeFileSplit.class.getName().equals(customSplitClass);
     }
 
     private static void configureCompressionCodecs(JobConf jobConf)

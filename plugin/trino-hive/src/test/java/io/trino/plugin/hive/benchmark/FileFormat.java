@@ -396,7 +396,8 @@ public enum FileFormat
                 Optional.empty(),
                 Optional.empty(),
                 false,
-                Optional.empty());
+                Optional.empty(),
+                ImmutableMap.of());
 
         ConnectorPageSource hivePageSource = factory.createPageSource(
                 TestingConnectorTransactionHandle.INSTANCE,
@@ -443,7 +444,8 @@ public enum FileFormat
                 readColumns,
                 TupleDomain.all(),
                 TYPE_MANAGER,
-                false);
+                false,
+                ImmutableMap.of());
 
         checkState(recordCursorWithProjections.isPresent(), "readerPageSourceWithProjections is not present");
         checkState(!recordCursorWithProjections.get().getProjectedReaderColumns().isPresent(), "projection should not be required");
