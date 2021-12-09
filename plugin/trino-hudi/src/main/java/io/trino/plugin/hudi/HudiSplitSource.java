@@ -19,11 +19,22 @@ import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.spi.connector.ConnectorPartitionHandle;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hudi.common.config.HoodieMetadataConfig;
+import org.apache.hudi.common.engine.HoodieEngineContext;
+import org.apache.hudi.common.engine.HoodieLocalEngineContext;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.table.timeline.TimelineUtils;
+import org.apache.hudi.common.table.view.FileSystemViewManager;
+import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import static com.google.common.collect.Iterators.limit;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 
@@ -31,25 +42,39 @@ public class HudiSplitSource
         implements ConnectorSplitSource
 {
     private final HudiTableHandle tableHandle;
+    private final HoodieTableMetaClient metaClient;
+    private final HoodieTableFileSystemView fileSystemView;
+    private final Iterator<HoodieBaseFile> hoodieBaseFileIterator;
 
-    public HudiSplitSource(HudiTableHandle tableHandle)
+    public HudiSplitSource(HudiTableHandle tableHandle, Configuration conf)
     {
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
+        this.metaClient = tableHandle.getMetaClient();
+        HoodieEngineContext engineContext = new HoodieLocalEngineContext(conf);
+        HoodieMetadataConfig metadataConfig = HoodieMetadataConfig.newBuilder()
+                .enable(false)
+                .build();
+        this.fileSystemView = FileSystemViewManager.createInMemoryFileSystemView(engineContext, metaClient, metadataConfig);
+        this.hoodieBaseFileIterator = fileSystemView.getLatestBaseFiles().iterator();
     }
 
     @Override
     public CompletableFuture<ConnectorSplitBatch> getNextBatch(ConnectorPartitionHandle partitionHandle, int maxSize)
     {
         List<ConnectorSplit> splits = new ArrayList<>();
-        HudiSplit hudiSplit = new HudiSplit(
-                "",
-                0L,
-                100L,
-                100L,
-                ImmutableList.of(),
-                tableHandle.getPredicate(),
-                getPartitionKeys(tableHandle));
-        splits.add(hudiSplit);
+        Iterator<HoodieBaseFile> baseFileIterator = limit(hoodieBaseFileIterator, maxSize);
+        while (baseFileIterator.hasNext()) {
+            HoodieBaseFile baseFile = baseFileIterator.next();
+            splits.add(new HudiSplit(
+                    baseFile.getPath(),
+                    0L,
+                    baseFile.getFileLen(),
+                    baseFile.getFileSize(),
+                    ImmutableList.of(),
+                    tableHandle.getPredicate(),
+                    getPartitionKeys()));
+        }
+
         return completedFuture(new ConnectorSplitBatch(splits, isFinished()));
     }
 
@@ -62,13 +87,14 @@ public class HudiSplitSource
     @Override
     public boolean isFinished()
     {
-        // TODO: finish based on file iterator
-        return false;
+        return !hoodieBaseFileIterator.hasNext();
     }
 
-    private static List<HivePartitionKey> getPartitionKeys(HudiTableHandle hudiTableHandle)
+    private List<HivePartitionKey> getPartitionKeys()
     {
         List<HivePartitionKey> partitionKeys = new ArrayList<>();
+        List<String> partitions = TimelineUtils.getPartitionsWritten(metaClient.getActiveTimeline());
+
         return partitionKeys;
     }
 }

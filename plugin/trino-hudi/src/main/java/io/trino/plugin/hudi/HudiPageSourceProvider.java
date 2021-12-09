@@ -28,6 +28,7 @@ import io.trino.plugin.hive.FileFormatDataSourceStats;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HdfsEnvironment.HdfsContext;
 import io.trino.plugin.hive.HiveColumnHandle;
+import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.ReaderColumns;
 import io.trino.plugin.hive.parquet.HdfsParquetDataSource;
 import io.trino.plugin.hive.parquet.ParquetPageSource;
@@ -143,7 +144,8 @@ public class HudiPageSourceProvider
                 fileFormatDataSourceStats,
                 timeZone,
                 parquetReaderOptions,
-                session.getIdentity());
+                session.getIdentity(),
+                split.getPartitionKeys());
     }
 
     private static ConnectorPageSource createParquetPageSource(
@@ -159,7 +161,8 @@ public class HudiPageSourceProvider
             FileFormatDataSourceStats stats,
             DateTimeZone timeZone,
             ParquetReaderOptions options,
-            ConnectorIdentity identity)
+            ConnectorIdentity identity,
+            List<HivePartitionKey> partitionKeys)
     {
         ParquetDataSource dataSource = null;
         // TODO: Reuse some elements of ParquetPageSourceFactory and extract the try block to a new HudiParquetReader class.

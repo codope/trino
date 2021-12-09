@@ -16,6 +16,7 @@ package io.trino.plugin.hudi;
 
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.spi.type.TypeManager;
 
 import javax.inject.Inject;
 
@@ -25,16 +26,18 @@ public class HudiMetadataFactory
 {
     private final HiveMetastore metastore;
     private final HdfsEnvironment hdfsEnvironment;
+    private final TypeManager typeManager;
 
     @Inject
-    public HudiMetadataFactory(HiveMetastore metastore, HdfsEnvironment hdfsEnvironment)
+    public HudiMetadataFactory(HiveMetastore metastore, HdfsEnvironment hdfsEnvironment, TypeManager typeManager)
     {
         this.metastore = requireNonNull(metastore, "metastore is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
+        this.typeManager = requireNonNull(typeManager, "typeManager is null");
     }
 
     public HudiMetadata create()
     {
-        return new HudiMetadata(metastore, hdfsEnvironment);
+        return new HudiMetadata(metastore, hdfsEnvironment, typeManager);
     }
 }
