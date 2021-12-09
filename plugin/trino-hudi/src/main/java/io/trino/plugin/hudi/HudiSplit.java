@@ -26,6 +26,7 @@ import io.trino.spi.predicate.TupleDomain;
 
 import java.util.List;
 
+import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
 
@@ -66,7 +67,7 @@ public class HudiSplit
     @Override
     public boolean isRemotelyAccessible()
     {
-        return false;
+        return true;
     }
 
     @Override
@@ -82,6 +83,7 @@ public class HudiSplit
                 .put("path", path)
                 .put("start", start)
                 .put("length", length)
+                .put("fileSize", fileSize)
                 .build();
     }
 
@@ -119,5 +121,16 @@ public class HudiSplit
     public List<HivePartitionKey> getPartitionKeys()
     {
         return partitionKeys;
+    }
+
+    @Override
+    public String toString()
+    {
+        return toStringHelper(this)
+                .addValue(path)
+                .addValue(start)
+                .addValue(length)
+                .addValue(fileSize)
+                .toString();
     }
 }

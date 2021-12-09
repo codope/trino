@@ -28,6 +28,8 @@ import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
 
 import javax.inject.Inject;
 
@@ -60,7 +62,8 @@ public class HudiSplitManager
         HiveMetastore metastore = transactionManager.get(transaction).getMetastore();
         Table table = metastore.getTable(new HiveIdentity(session), tableName.getSchemaName(), tableName.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(tableName));
-        HudiSplitSource splitSource = new HudiSplitSource(hudiTable);
+        Configuration conf = hdfsEnvironment.getConfiguration(new HdfsEnvironment.HdfsContext(session), new Path(table.getStorage().getLocation()));
+        HudiSplitSource splitSource = new HudiSplitSource(hudiTable, conf);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 }
