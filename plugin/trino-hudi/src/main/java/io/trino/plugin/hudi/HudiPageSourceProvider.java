@@ -65,6 +65,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TimeZone;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.trino.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
@@ -109,7 +110,7 @@ public class HudiPageSourceProvider
         this.fileFormatDataSourceStats = requireNonNull(fileFormatDataSourceStats, "fileFormatDataSourceStats is null");
         this.parquetReaderOptions = requireNonNull(parquetReaderConfig, "parquetReaderConfig is null").toParquetReaderOptions();
         requireNonNull(hudiConfig, "hudiConfig is null");
-        this.timeZone = DateTimeZone.forID(hudiConfig.getParquetTimeZone());
+        this.timeZone = DateTimeZone.forID(TimeZone.getDefault().getID());
     }
 
     @Override

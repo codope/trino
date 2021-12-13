@@ -24,6 +24,7 @@ import io.trino.plugin.hive.HiveTransactionHandle;
 import io.trino.spi.classloader.ThreadContextClassLoader;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorAccessControl;
+import io.trino.spi.connector.ConnectorHandleResolver;
 import io.trino.spi.connector.ConnectorMetadata;
 import io.trino.spi.connector.ConnectorNodePartitioningProvider;
 import io.trino.spi.connector.ConnectorPageSinkProvider;
@@ -31,7 +32,6 @@ import io.trino.spi.connector.ConnectorPageSourceProvider;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorTransactionHandle;
 import io.trino.spi.connector.SystemTable;
-import io.trino.spi.procedure.Procedure;
 import io.trino.spi.session.PropertyMetadata;
 import io.trino.spi.transaction.IsolationLevel;
 
@@ -60,7 +60,6 @@ public class HudiConnector
     private final List<PropertyMetadata<?>> sessionProperties;
     private final List<PropertyMetadata<?>> tableProperties;
     private final Optional<ConnectorAccessControl> accessControl;
-    private final Set<Procedure> procedures;
 
     public HudiConnector(
             LifeCycleManager lifeCycleManager,
@@ -73,8 +72,7 @@ public class HudiConnector
             Set<SystemTable> systemTables,
             Set<SessionPropertiesProvider> sessionPropertiesProviders,
             List<PropertyMetadata<?>> tableProperties,
-            Optional<ConnectorAccessControl> accessControl,
-            Set<Procedure> procedures)
+            Optional<ConnectorAccessControl> accessControl)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
@@ -89,7 +87,12 @@ public class HudiConnector
                 .collect(toImmutableList());
         this.tableProperties = ImmutableList.copyOf(requireNonNull(tableProperties, "tableProperties is null"));
         this.accessControl = requireNonNull(accessControl, "accessControl is null");
-        this.procedures = requireNonNull(procedures, "procedures is null");
+    }
+
+    @Override
+    public Optional<ConnectorHandleResolver> getHandleResolver()
+    {
+        return Optional.of(new HudiHandleResolver());
     }
 
     @Override
@@ -127,12 +130,6 @@ public class HudiConnector
     public Set<SystemTable> getSystemTables()
     {
         return systemTables;
-    }
-
-    @Override
-    public Set<Procedure> getProcedures()
-    {
-        return procedures;
     }
 
     @Override

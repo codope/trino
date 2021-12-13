@@ -20,14 +20,12 @@ import org.apache.hudi.common.model.HoodieFileFormat;
 
 import javax.validation.constraints.NotNull;
 
-import java.util.TimeZone;
-
-import static io.trino.plugin.hudi.HudiFileFormat.PARQUET;
+import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 
 public class HudiConfig
 {
-    private HudiFileFormat fileFormat = PARQUET;
-    private String parquetTimeZone = TimeZone.getDefault().getID();
+    private HoodieFileFormat fileFormat = PARQUET;
+    private boolean metadataEnabled;
 
     @NotNull
     public HoodieFileFormat getFileFormat()
@@ -36,23 +34,23 @@ public class HudiConfig
     }
 
     @Config("hudi.file-format")
-    public HudiConfig setFileFormat(HudiFileFormat fileFormat)
+    public HudiConfig setFileFormat(HoodieFileFormat fileFormat)
     {
         this.fileFormat = fileFormat;
         return this;
     }
 
-    @NotNull
-    public String getParquetTimeZone()
+    @Config("hudi.metadata-enabled")
+    @ConfigDescription("Fetch the list of file names and sizes from metadata rather than storage")
+    public HudiConfig setMetadataEnabled(boolean metadataEnabled)
     {
-        return parquetTimeZone;
+        this.metadataEnabled = metadataEnabled;
+        return this;
     }
 
-    @Config("hudi.parquet.time-zone")
-    @ConfigDescription("Time zone for Parquet read and write")
-    public HudiConfig setParquetTimeZone(String parquetTimeZone)
+    @NotNull
+    public boolean isMetadataEnabled()
     {
-        this.parquetTimeZone = parquetTimeZone;
-        return this;
+        return this.metadataEnabled;
     }
 }

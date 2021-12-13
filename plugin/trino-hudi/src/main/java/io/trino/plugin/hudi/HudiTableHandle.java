@@ -39,22 +39,46 @@ public class HudiTableHandle
 {
     private final String schemaName;
     private final String tableName;
+    private final String basePath;
     private final HoodieTableType tableType;
     private final TupleDomain<HiveColumnHandle> predicate;
     private final Optional<List<HivePartition>> partitions;
-    private final HoodieTableMetaClient metaClient;
+    private final Optional<HoodieTableMetaClient> metaClient;
 
     @JsonCreator
     public HudiTableHandle(
             @JsonProperty("schemaName") String schemaName,
             @JsonProperty("tableName") String tableName,
+            @JsonProperty("basePath") String basePath,
             @JsonProperty("tableType") HoodieTableType tableType,
-            @JsonProperty("predicate") TupleDomain<HiveColumnHandle> predicate,
+            @JsonProperty("predicate") TupleDomain<HiveColumnHandle> predicate)
+    {
+        this(schemaName, tableName, basePath, tableType, predicate, Optional.empty(), Optional.empty());
+    }
+
+    public HudiTableHandle(
+            String schemaName,
+            String tableName,
+            String basePath,
+            HoodieTableType tableType,
+            TupleDomain<HiveColumnHandle> predicate,
+            Optional<HoodieTableMetaClient> metaClient)
+    {
+        this(schemaName, tableName, basePath, tableType, predicate, Optional.empty(), metaClient);
+    }
+
+    public HudiTableHandle(
+            String schemaName,
+            String tableName,
+            String basePath,
+            HoodieTableType tableType,
+            TupleDomain<HiveColumnHandle> predicate,
             Optional<List<HivePartition>> partitions,
-            HoodieTableMetaClient metaClient)
+            Optional<HoodieTableMetaClient> metaClient)
     {
         this.schemaName = requireNonNull(schemaName, "schemaName is null");
         this.tableName = requireNonNull(tableName, "tableName is null");
+        this.basePath = requireNonNull(basePath, "basePath is null");
         this.tableType = requireNonNull(tableType, "tableType is null");
         this.predicate = requireNonNull(predicate, "predicate is null");
         this.partitions = requireNonNull(partitions, "partitions is null").map(ImmutableList::copyOf);
@@ -74,6 +98,12 @@ public class HudiTableHandle
     }
 
     @JsonProperty
+    public String getBasePath()
+    {
+        return basePath;
+    }
+
+    @JsonProperty
     public HoodieTableType getTableType()
     {
         return tableType;
@@ -89,7 +119,7 @@ public class HudiTableHandle
     public Optional<List<HivePartition>> getPartitions()
     {
         if (partitions.isEmpty()) {
-            List<String> partitionIds = TimelineUtils.getPartitionsWritten(metaClient.getActiveTimeline());
+            List<String> partitionIds = TimelineUtils.getPartitionsWritten(metaClient.get().getActiveTimeline());
             List<HivePartition> hivePartitions = partitionIds.stream()
                     .map(p -> new HivePartition(getSchemaTableName(), p, ImmutableMap.of()))
                     .collect(Collectors.toList());
@@ -100,7 +130,7 @@ public class HudiTableHandle
     }
 
     @JsonIgnore
-    public HoodieTableMetaClient getMetaClient()
+    public Optional<HoodieTableMetaClient> getMetaClient()
     {
         return metaClient;
     }

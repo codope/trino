@@ -19,7 +19,6 @@ import com.google.inject.Module;
 import io.trino.spi.connector.Connector;
 import io.trino.spi.connector.ConnectorContext;
 import io.trino.spi.connector.ConnectorFactory;
-import io.trino.spi.connector.ConnectorHandleResolver;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.Map;
@@ -51,12 +50,6 @@ public class HudiConnectorFactory
     public String getName()
     {
         return name;
-    }
-
-    @Override
-    public ConnectorHandleResolver getHandleResolver()
-    {
-        return new HudiHandleResolver();
     }
 
     @Override
