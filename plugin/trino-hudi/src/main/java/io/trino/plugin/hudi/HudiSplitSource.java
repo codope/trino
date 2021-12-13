@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static com.google.common.collect.Iterators.limit;
+import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
 
@@ -49,7 +50,7 @@ public class HudiSplitSource
     public HudiSplitSource(HudiTableHandle tableHandle, Configuration conf)
     {
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
-        this.metaClient = tableHandle.getMetaClient();
+        this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         HoodieEngineContext engineContext = new HoodieLocalEngineContext(conf);
         HoodieMetadataConfig metadataConfig = HoodieMetadataConfig.newBuilder()
                 .enable(false)

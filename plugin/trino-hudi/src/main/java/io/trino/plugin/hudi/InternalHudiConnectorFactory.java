@@ -29,6 +29,7 @@ import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorPageSourceProvid
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitManager;
 import io.trino.plugin.base.classloader.ClassLoaderSafeNodePartitioningProvider;
 import io.trino.plugin.base.jmx.MBeanServerModule;
+import io.trino.plugin.base.security.AllowAllAccessControl;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
 import io.trino.plugin.hive.HiveHdfsModule;
 import io.trino.plugin.hive.NodeVersion;
@@ -48,7 +49,6 @@ import io.trino.spi.connector.ConnectorNodePartitioningProvider;
 import io.trino.spi.connector.ConnectorPageSinkProvider;
 import io.trino.spi.connector.ConnectorPageSourceProvider;
 import io.trino.spi.connector.ConnectorSplitManager;
-import io.trino.spi.procedure.Procedure;
 import io.trino.spi.type.TypeManager;
 import org.weakref.jmx.guice.MBeanModule;
 
@@ -62,6 +62,11 @@ public final class InternalHudiConnectorFactory
 {
     private InternalHudiConnectorFactory() {}
 
+    public static Connector createConnector(String catalogName, Map<String, String> config, ConnectorContext context, Module module)
+    {
+        return createConnector(catalogName, config, context, module, Optional.empty());
+    }
+
     public static Connector createConnector(String catalogName, Map<String, String> config, ConnectorContext context, Module module, Optional<HiveMetastore> metastore)
     {
         requireNonNull(config, "config is null");
@@ -72,8 +77,7 @@ public final class InternalHudiConnectorFactory
                     new MBeanModule(),
                     new JsonModule(),
                     new HudiModule(),
-                    new HudiMetastoreModule(metastore),
-                    new HiveMetastoreModule(Optional.empty()),
+                    new HiveMetastoreModule(metastore),
                     new HiveHdfsModule(),
                     new HiveS3Module(),
                     new HiveGcsModule(),
@@ -103,8 +107,7 @@ public final class InternalHudiConnectorFactory
             ConnectorNodePartitioningProvider connectorDistributionProvider = injector.getInstance(ConnectorNodePartitioningProvider.class);
             Set<SessionPropertiesProvider> sessionPropertiesProviders = injector.getInstance(Key.get(new TypeLiteral<Set<SessionPropertiesProvider>>() {}));
             HudiTableProperties hudiTableProperties = injector.getInstance(HudiTableProperties.class);
-            Set<Procedure> procedures = injector.getInstance(Key.get(new TypeLiteral<Set<Procedure>>() {}));
-            Optional<ConnectorAccessControl> accessControl = injector.getInstance(Key.get(new TypeLiteral<Optional<ConnectorAccessControl>>() {}));
+            Optional<ConnectorAccessControl> accessControl = Optional.of(new AllowAllAccessControl());
 
             return new HudiConnector(
                     lifeCycleManager,
@@ -117,8 +120,7 @@ public final class InternalHudiConnectorFactory
                     ImmutableSet.of(),
                     sessionPropertiesProviders,
                     hudiTableProperties.getTableProperties(),
-                    accessControl,
-                    procedures);
+                    accessControl);
         }
     }
 }

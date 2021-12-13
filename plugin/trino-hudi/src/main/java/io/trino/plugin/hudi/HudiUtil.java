@@ -14,8 +14,15 @@
 
 package io.trino.plugin.hudi;
 
-public enum HudiFileFormat
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
+
+public class HudiUtil
 {
-    PARQUET,
-    ORC,
+    private HudiUtil() {}
+
+    public static HoodieTableMetaClient getMetaClient(Configuration conf, String basePath)
+    {
+        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+    }
 }
