@@ -62,6 +62,7 @@ import static io.trino.plugin.hive.HiveTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
 import static io.trino.plugin.hive.util.HiveUtil.columnExtraInfo;
 import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
+import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
@@ -95,18 +96,24 @@ public class HudiMetadata
     @Override
     public HudiTableHandle getTableHandle(ConnectorSession session, SchemaTableName tableName)
     {
-        Table table = metastore.getTable(new HiveIdentity(session), tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(tableName));
-        if (!isHudiTable(session, table)) {
+        requireNonNull(tableName, "tableName is null");
+        if (isHiveSystemSchema(tableName.getSchemaName())) {
+            return null;
+        }
+        Optional<Table> table = metastore.getTable(new HiveIdentity(session), tableName.getSchemaName(), tableName.getTableName());
+        if (table.isEmpty()) {
+            return null;
+        }
+        if (!isHudiTable(session, table.get())) {
             throw new TrinoException(HUDI_UNKNOWN_TABLE_TYPE, format("Not a Hudi table: %s", tableName));
         }
         return new HudiTableHandle(
                 tableName.getSchemaName(),
                 tableName.getTableName(),
-                table.getStorage().getLocation(),
+                table.get().getStorage().getLocation(),
                 HoodieTableType.COPY_ON_WRITE,
                 TupleDomain.all(),
-                Optional.of(getTableMetaClient(session, table)));
+                Optional.of(getTableMetaClient(session, table.get())));
     }
 
     @Override
@@ -175,6 +182,31 @@ public class HudiMetadata
                                 .map(HivePartition::getPartitionId)
                                 .collect(toImmutableList()),
                         false));
+    }
+
+    @Override
+    public List<SchemaTableName> listTables(ConnectorSession session, Optional<String> optionalSchemaName)
+    {
+        ImmutableList.Builder<SchemaTableName> tableNames = ImmutableList.builder();
+        for (String schemaName : listSchemas(session, optionalSchemaName)) {
+            for (String tableName : metastore.getAllTables(schemaName)) {
+                tableNames.add(new SchemaTableName(schemaName, tableName));
+            }
+        }
+
+        tableNames.addAll(listMaterializedViews(session, optionalSchemaName));
+        return tableNames.build();
+    }
+
+    private List<String> listSchemas(ConnectorSession session, Optional<String> schemaName)
+    {
+        if (schemaName.isPresent()) {
+            if (isHiveSystemSchema(schemaName.get())) {
+                return ImmutableList.of();
+            }
+            return ImmutableList.of(schemaName.get());
+        }
+        return listSchemaNames(session);
     }
 
     @Override
