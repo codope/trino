@@ -15,6 +15,7 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.units.DataSize;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.session.PropertyMetadata;
@@ -24,6 +25,7 @@ import javax.inject.Inject;
 
 import java.util.List;
 
+import static io.trino.plugin.base.session.PropertyMetadataUtil.dataSizeProperty;
 import static io.trino.spi.session.PropertyMetadata.booleanProperty;
 import static io.trino.spi.session.PropertyMetadata.enumProperty;
 
@@ -32,6 +34,7 @@ public class HudiSessionProperties
 {
     private static final String FILE_FORMAT = "file_format";
     private static final String METADATA_ENABLED = "metadata_enabled";
+    private static final String MAX_SPLIT_SIZE = "max_split_size";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -49,7 +52,12 @@ public class HudiSessionProperties
                         METADATA_ENABLED,
                         "For Hudi tables prefer to fetch the list of files from its metadata",
                         hudiConfig.isMetadataEnabled(),
-                        false));
+                        false),
+                dataSizeProperty(
+                        MAX_SPLIT_SIZE,
+                        "Max split size",
+                        hudiConfig.getMaxSplitSize(),
+                        true));
     }
 
     @Override
@@ -66,5 +74,10 @@ public class HudiSessionProperties
     public static boolean isHudiMetadataEnabled(ConnectorSession session)
     {
         return session.getProperty(METADATA_ENABLED, Boolean.class);
+    }
+
+    public static DataSize getMaxSplitSize(ConnectorSession session)
+    {
+        return session.getProperty(MAX_SPLIT_SIZE, DataSize.class);
     }
 }
