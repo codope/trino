@@ -16,8 +16,10 @@ package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
+import io.airlift.units.DataSize;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.spi.connector.ConnectorPartitionHandle;
+import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import org.apache.hadoop.conf.Configuration;
@@ -47,11 +49,12 @@ public class HudiSplitSource
         implements ConnectorSplitSource
 {
     private static final Logger log = Logger.get(HudiSplitSource.class);
-
+    private final Configuration conf;
     private final HudiTableHandle tableHandle;
     private final HoodieTableMetaClient metaClient;
     private final HoodieTableFileSystemView fileSystemView;
     private final Iterator<HoodieBaseFile> hoodieBaseFileIterator;
+    private final DataSize maxSplitSize;
     private final List<HivePartitionKey> partitionKeys;
     private final boolean metadataEnabled;
     private final Optional<FileStatus[]> fileStatuses;
@@ -59,6 +62,7 @@ public class HudiSplitSource
     private final String dataDir;
 
     public HudiSplitSource(
+            ConnectorSession session,
             HudiTableHandle tableHandle,
             Configuration conf,
             List<HivePartitionKey> partitionKeys,
@@ -67,6 +71,8 @@ public class HudiSplitSource
             String tablePath,
             String dataDir)
     {
+        requireNonNull(session, "session is null");
+        this.conf = requireNonNull(conf, "conf is null");
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
         this.partitionKeys = requireNonNull(partitionKeys, "partitionKeys is null");
         this.metadataEnabled = metadataEnabled;
@@ -91,6 +97,7 @@ public class HudiSplitSource
         else {
             this.hoodieBaseFileIterator = fileSystemView.getLatestBaseFiles(partition).iterator();
         }
+        this.maxSplitSize = HudiSessionProperties.getMaxSplitSize(session);
     }
 
     @Override
@@ -98,6 +105,7 @@ public class HudiSplitSource
     {
         log.debug("Getting next batch with partitionKeys: " + partitionKeys);
         List<ConnectorSplit> splits = new ArrayList<>();
+        long maxSplitBytes = maxSplitSize.toBytes();
         Iterator<HoodieBaseFile> baseFileIterator = limit(hoodieBaseFileIterator, maxSize);
         while (baseFileIterator.hasNext()) {
             HoodieBaseFile baseFile = baseFileIterator.next();
@@ -107,14 +115,32 @@ public class HudiSplitSource
             /*String[] name = new String[] {"localhost:" + DFS_DATANODE_DEFAULT_PORT};
             String[] host = new String[] {"localhost"};
             BlockLocation[] blockLocations = new BlockLocation[] {new BlockLocation(name, host, 0L, fileStatus.getLen())};*/
-            splits.add(new HudiSplit(
-                    baseFile.getPath(),
-                    0L,
-                    baseFile.getFileLen(),
-                    baseFile.getFileSize(),
-                    ImmutableList.of(),
-                    tableHandle.getPredicate(),
-                    partitionKeys));
+            long remainingFileBytes = baseFile.getFileSize();
+            long start = 0;
+            long splitBytes;
+            log.debug(String.format("Base file %s, %d bytes", baseFile.getPath(), remainingFileBytes));
+            while (remainingFileBytes > 0) {
+                if (remainingFileBytes <= maxSplitBytes) {
+                    splitBytes = remainingFileBytes;
+                }
+                else if (maxSplitBytes * 2 >= remainingFileBytes) {
+                    splitBytes = remainingFileBytes / 2;
+                }
+                else {
+                    splitBytes = maxSplitBytes;
+                }
+                log.debug(String.format("Split: start=%d len=%d remaining=%d", start, splitBytes, remainingFileBytes));
+                splits.add(new HudiSplit(
+                        baseFile.getPath(),
+                        start,
+                        splitBytes,
+                        baseFile.getFileSize(),
+                        ImmutableList.of(),
+                        tableHandle.getPredicate(),
+                        partitionKeys));
+                start += splitBytes;
+                remainingFileBytes -= splitBytes;
+            }
         }
 
         return completedFuture(new ConnectorSplitBatch(splits, isFinished()));
