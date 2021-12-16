@@ -15,6 +15,7 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.trino.parquet.Field;
 import io.trino.parquet.ParquetCorruptionException;
 import io.trino.parquet.ParquetDataSource;
@@ -67,7 +68,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TimeZone;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static io.trino.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
 import static io.trino.parquet.ParquetTypeUtils.getColumnIO;
 import static io.trino.parquet.ParquetTypeUtils.getDescriptors;
@@ -94,6 +94,8 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 public class HudiPageSourceProvider
         implements ConnectorPageSourceProvider
 {
+    private static final Logger log = Logger.get(HudiPageSourceProvider.class);
+
     private final HdfsEnvironment hdfsEnvironment;
     private final FileFormatDataSourceStats fileFormatDataSourceStats;
     private final ParquetReaderOptions parquetReaderOptions;
@@ -165,6 +167,8 @@ public class HudiPageSourceProvider
             ConnectorIdentity identity,
             List<HivePartitionKey> partitionKeys)
     {
+        log.debug(">>> Creating Parquet Page Source with partition keys: " + partitionKeys);
+
         ParquetDataSource dataSource = null;
         // TODO: Reuse some elements of ParquetPageSourceFactory and extract the try block to a new HudiParquetReader class.
         try {
@@ -231,9 +235,10 @@ public class HudiPageSourceProvider
                                     .collect(toUnmodifiableList()))
                     .orElse(columns);
 
-            for (HiveColumnHandle column : baseColumns) {
+            // TODO: add a check for patition column type
+            /*for (HiveColumnHandle column : baseColumns) {
                 checkArgument(column == PARQUET_ROW_INDEX_COLUMN || column.getColumnType() == REGULAR, "column type must be REGULAR: %s", column);
-            }
+            }*/
 
             ImmutableList.Builder<Type> trinoTypes = ImmutableList.builder();
             ImmutableList.Builder<Optional<Field>> internalFields = ImmutableList.builder();

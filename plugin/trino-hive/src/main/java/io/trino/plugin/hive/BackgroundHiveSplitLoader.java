@@ -28,7 +28,6 @@ import io.trino.plugin.hive.HdfsEnvironment.HdfsContext;
 import io.trino.plugin.hive.HiveSplit.BucketConversion;
 import io.trino.plugin.hive.HiveSplit.BucketValidation;
 import io.trino.plugin.hive.acid.AcidTransaction;
-import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.HiveBucketing.BucketingVersion;
@@ -100,8 +99,6 @@ import static io.airlift.concurrent.MoreFutures.toListenableFuture;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_BAD_DATA;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_FILESYSTEM_ERROR;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_BUCKET_FILES;
-import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
-import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_PARTITION_VALUE;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_UNKNOWN_ERROR;
 import static io.trino.plugin.hive.HivePartitionManager.partitionMatches;
 import static io.trino.plugin.hive.HiveSessionProperties.getMaxInitialSplitSize;
@@ -114,11 +111,11 @@ import static io.trino.plugin.hive.util.ConfigurationUtils.toJobConf;
 import static io.trino.plugin.hive.util.HiveFileIterator.NestedDirectoryPolicy.FAIL;
 import static io.trino.plugin.hive.util.HiveFileIterator.NestedDirectoryPolicy.IGNORED;
 import static io.trino.plugin.hive.util.HiveFileIterator.NestedDirectoryPolicy.RECURSE;
-import static io.trino.plugin.hive.util.HiveUtil.checkCondition;
 import static io.trino.plugin.hive.util.HiveUtil.getFooterCount;
 import static io.trino.plugin.hive.util.HiveUtil.getHeaderCount;
 import static io.trino.plugin.hive.util.HiveUtil.getInputFormat;
 import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeyColumnHandles;
+import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.lang.Integer.parseInt;
 import static java.lang.Math.max;
@@ -940,28 +937,6 @@ public class BackgroundHiveSplitLoader
         catch (IOException e) {
             throw new TrinoException(HIVE_BAD_DATA, "Error parsing symlinks from: " + symlinkDir, e);
         }
-    }
-
-    private static List<HivePartitionKey> getPartitionKeys(Table table, Optional<Partition> partition)
-    {
-        if (partition.isEmpty()) {
-            return ImmutableList.of();
-        }
-        ImmutableList.Builder<HivePartitionKey> partitionKeys = ImmutableList.builder();
-        List<Column> keys = table.getPartitionColumns();
-        List<String> values = partition.get().getValues();
-        checkCondition(keys.size() == values.size(), HIVE_INVALID_METADATA, "Expected %s partition key values, but got %s", keys.size(), values.size());
-        for (int i = 0; i < keys.size(); i++) {
-            String name = keys.get(i).getName();
-            HiveType hiveType = keys.get(i).getType();
-            if (!hiveType.isSupportedType(table.getStorage().getStorageFormat())) {
-                throw new TrinoException(NOT_SUPPORTED, format("Unsupported Hive type %s found in partition keys of table %s.%s", hiveType, table.getDatabaseName(), table.getTableName()));
-            }
-            String value = values.get(i);
-            checkCondition(value != null, HIVE_INVALID_PARTITION_VALUE, "partition key value cannot be null for field: %s", name);
-            partitionKeys.add(new HivePartitionKey(name, value));
-        }
-        return partitionKeys.build();
     }
 
     private static Properties getPartitionSchema(Table table, Optional<Partition> partition)

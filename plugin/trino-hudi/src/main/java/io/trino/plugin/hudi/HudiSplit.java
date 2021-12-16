@@ -70,6 +70,7 @@ public class HudiSplit
         return true;
     }
 
+    @JsonProperty
     @Override
     public List<HostAddress> getAddresses()
     {
