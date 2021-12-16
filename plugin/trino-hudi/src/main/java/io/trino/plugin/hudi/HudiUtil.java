@@ -14,8 +14,17 @@
 
 package io.trino.plugin.hudi;
 
+import io.trino.plugin.hive.metastore.Partition;
+import io.trino.plugin.hive.metastore.Table;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.hadoop.HoodieParquetInputFormat;
+
+import java.util.Optional;
+import java.util.Properties;
+
+import static io.trino.plugin.hive.metastore.MetastoreUtil.getHiveSchema;
 
 public class HudiUtil
 {
@@ -24,5 +33,18 @@ public class HudiUtil
     public static HoodieTableMetaClient getMetaClient(Configuration conf, String basePath)
     {
         return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+    }
+
+    public static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)
+    {
+        return inputFormat instanceof HoodieParquetInputFormat;
+    }
+
+    public static Properties getPartitionSchema(Table table, Optional<Partition> partition)
+    {
+        if (partition.isEmpty()) {
+            return getHiveSchema(table);
+        }
+        return getHiveSchema(partition.get(), table);
     }
 }
