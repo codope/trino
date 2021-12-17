@@ -39,7 +39,9 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.FileInputFormat;
 import org.apache.hadoop.mapred.InputFormat;
+import org.apache.hadoop.mapred.JobConf;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 
@@ -47,10 +49,13 @@ import javax.inject.Inject;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.Maps.fromProperties;
 import static io.trino.plugin.hive.util.ConfigurationUtils.toJobConf;
 import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
@@ -131,39 +136,50 @@ public class HudiSplitManager
             List<HivePartitionKey> partitionKeys = getPartitionKeys(table, partition);
             partitionKeys.forEach(p -> log.warn("Fetched partitions from HiveUtil: " + p));
 
-            fileStatuses = getFileStatuses(fs, conf, dataDir, fileStatuses, schema);
-            splitSource = new HudiSplitSource(hudiTable, conf, partitionKeys, isHudiMetadataEnabled(session), fileStatuses, tablePath, dataDir);
+            InputFormat inputFormat = HiveUtil.getInputFormat(conf, schema, false);
+            log.warn(">>> Check for inputFormat: " + isHudiParquetInputFormat(inputFormat));
+            log.warn(">>> Conf: ");
+            printConf(conf);
+
+            try {
+                if (isHudiParquetInputFormat(inputFormat)) {
+                    JobConf jobConf = toJobConf(conf);
+                    String allAbsolutePartitonPaths = String.join(",", partitionValues.stream().map(
+                            relativePartitionPath -> tablePath + "/" + relativePartitionPath
+                    ).collect(Collectors.toList()));
+                    FileInputFormat.setInputPaths(jobConf, allAbsolutePartitonPaths);
+                    // Pass SerDes and Table parameters into input format configuration
+                    fromProperties(schema).forEach(jobConf::set);
+                    log.warn(">>> Updated conf: ");
+                    printConf(jobConf);
+                    fileStatuses = Optional.of(((HoodieParquetInputFormat) inputFormat).listStatus(jobConf));
+                }
+                if (fileStatuses.isPresent()) {
+                    log.warn(">>> Total Files: " + fileStatuses.get().length);
+                    if (fileStatuses.get().length == 0 && fs != null) {
+                        fileStatuses = Optional.of(fs.listStatus(new Path(dataDir)));
+                        log.warn(">>> Total Files: " + fileStatuses.get().length);
+                    }
+                }
+                log.warn(">>> Total Splits: " + inputFormat.getSplits(toJobConf(conf), 0).length);
+            }
+            catch (IOException e) {
+                e.printStackTrace();
+            }
+            splitSource = new HudiSplitSource(session, hudiTable, conf, partitionKeys, isHudiMetadataEnabled(session), fileStatuses, tablePath, dataDir);
         }
         else {
             // no partitions, so data dir is same as table path
-            Properties schema = getPartitionSchema(table, Optional.empty());
-            fileStatuses = getFileStatuses(fs, conf, tablePath, fileStatuses, schema);
-            splitSource = new HudiSplitSource(hudiTable, conf, ImmutableList.of(), isHudiMetadataEnabled(session), fileStatuses, tablePath, tablePath);
+            splitSource = new HudiSplitSource(session, hudiTable, conf, ImmutableList.of(), isHudiMetadataEnabled(session), fileStatuses, tablePath, tablePath);
         }
 
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 
-    private static Optional<FileStatus[]> getFileStatuses(FileSystem fs, Configuration conf, String tablePath, Optional<FileStatus[]> fileStatuses, Properties schema)
+    void printConf(Configuration conf)
     {
-        InputFormat inputFormat = HiveUtil.getInputFormat(conf, schema, false);
-        log.warn(">>> Check for inputFormat: " + isHudiParquetInputFormat(inputFormat));
-
-        try {
-            if (isHudiParquetInputFormat(inputFormat)) {
-                fileStatuses = Optional.of(((HoodieParquetInputFormat) inputFormat).listStatus(toJobConf(conf)));
-            }
-            if (fileStatuses.isPresent()) {
-                log.warn(">>> Total Files: " + fileStatuses.get().length);
-                if (fileStatuses.get().length == 0 && fs != null) {
-                    fileStatuses = Optional.of(fs.listStatus(new Path(tablePath)));
-                    log.warn(">>> Total Files: " + fileStatuses.get().length);
-                }
-            }
+        for (Map.Entry<String, String> entry : conf) {
+            log.debug("%s=%s\n", entry.getKey(), entry.getValue());
         }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
-        return fileStatuses;
     }
 }
