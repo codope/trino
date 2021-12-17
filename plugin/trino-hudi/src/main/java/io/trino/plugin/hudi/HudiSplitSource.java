@@ -23,21 +23,22 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.FileSplit;
+import org.apache.hadoop.mapred.InputSplit;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
 import org.apache.hudi.common.fs.FSUtils;
-import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static com.google.common.collect.Iterators.limit;
@@ -53,11 +54,10 @@ public class HudiSplitSource
     private final HudiTableHandle tableHandle;
     private final HoodieTableMetaClient metaClient;
     private final HoodieTableFileSystemView fileSystemView;
-    private final Iterator<HoodieBaseFile> hoodieBaseFileIterator;
+    private final Iterator<InputSplit> inputSplitIterator;
     private final DataSize maxSplitSize;
     private final List<HivePartitionKey> partitionKeys;
     private final boolean metadataEnabled;
-    private final Optional<FileStatus[]> fileStatuses;
     private final String tablePath;
     private final String dataDir;
 
@@ -67,7 +67,7 @@ public class HudiSplitSource
             Configuration conf,
             List<HivePartitionKey> partitionKeys,
             boolean metadataEnabled,
-            Optional<FileStatus[]> fileStatuses,
+            InputSplit[] inputSplits,
             String tablePath,
             String dataDir)
     {
@@ -76,7 +76,6 @@ public class HudiSplitSource
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
         this.partitionKeys = requireNonNull(partitionKeys, "partitionKeys is null");
         this.metadataEnabled = metadataEnabled;
-        this.fileStatuses = fileStatuses;
         this.tablePath = tablePath;
         this.dataDir = dataDir;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
@@ -89,14 +88,7 @@ public class HudiSplitSource
         log.debug("Table path: %s \nDirectory: %s", tablePath, dataDir);
         String partition = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir));
         log.debug("Partition: %s", partition);
-        if (fileStatuses.isPresent()) {
-            log.warn(">>> FileStatus present adding to view: %s", fileStatuses.get().length);
-            fileSystemView.addFilesToView(fileStatuses.get());
-            this.hoodieBaseFileIterator = fileSystemView.fetchLatestBaseFiles(partition).iterator();
-        }
-        else {
-            this.hoodieBaseFileIterator = fileSystemView.getLatestBaseFiles(partition).iterator();
-        }
+        this.inputSplitIterator = Arrays.stream(inputSplits).iterator();
         this.maxSplitSize = DataSize.ofBytes(32 * 1024 * 1024);
     }
 
@@ -104,46 +96,28 @@ public class HudiSplitSource
     public CompletableFuture<ConnectorSplitBatch> getNextBatch(ConnectorPartitionHandle partitionHandle, int maxSize)
     {
         log.debug("Getting next batch with partitionKeys: " + partitionKeys);
-        List<ConnectorSplit> splits = new ArrayList<>();
-        long maxSplitBytes = maxSplitSize.toBytes();
-        Iterator<HoodieBaseFile> baseFileIterator = limit(hoodieBaseFileIterator, maxSize);
-        while (baseFileIterator.hasNext()) {
-            HoodieBaseFile baseFile = baseFileIterator.next();
-            log.warn(">>>> Base File: " + baseFile);
-            FileStatus fileStatus = baseFile.getFileStatus();
-            log.warn(">>>> FileStatus: " + fileStatus.toString());
-            /*String[] name = new String[] {"localhost:" + DFS_DATANODE_DEFAULT_PORT};
-            String[] host = new String[] {"localhost"};
-            BlockLocation[] blockLocations = new BlockLocation[] {new BlockLocation(name, host, 0L, fileStatus.getLen())};*/
-            long remainingFileBytes = baseFile.getFileSize();
-            long start = 0;
-            long splitBytes;
-            log.debug(String.format("Base file %s, %d bytes", baseFile.getPath(), remainingFileBytes));
-            while (remainingFileBytes > 0) {
-                if (remainingFileBytes <= maxSplitBytes) {
-                    splitBytes = remainingFileBytes;
-                }
-                else if (maxSplitBytes * 2 >= remainingFileBytes) {
-                    splitBytes = remainingFileBytes / 2;
-                }
-                else {
-                    splitBytes = maxSplitBytes;
-                }
-                log.debug(String.format("Split: start=%d len=%d remaining=%d", start, splitBytes, remainingFileBytes));
-                splits.add(new HudiSplit(
-                        baseFile.getPath(),
-                        start,
-                        splitBytes,
-                        baseFile.getFileSize(),
+        List<ConnectorSplit> connectorSplits = new ArrayList<>();
+        Iterator<InputSplit> batchSplitIterator = limit(inputSplitIterator, maxSize);
+        while (batchSplitIterator.hasNext()) {
+            FileSplit fileSplit = (FileSplit) batchSplitIterator.next();
+            log.debug(String.format(">>>> File split: %s start=%d len=%d",
+                    fileSplit.getPath(), fileSplit.getStart(), fileSplit.getLength()));
+            try {
+                connectorSplits.add(new HudiSplit(
+                        fileSplit.getPath().toString(),
+                        fileSplit.getStart(),
+                        fileSplit.getLength(),
+                        metaClient.getFs().getLength(fileSplit.getPath()),
                         ImmutableList.of(),
                         tableHandle.getPredicate(),
                         partitionKeys));
-                start += splitBytes;
-                remainingFileBytes -= splitBytes;
+            }
+            catch (IOException e) {
+                log.error("Error getting file size: " + e.getMessage());
             }
         }
 
-        return completedFuture(new ConnectorSplitBatch(splits, isFinished()));
+        return completedFuture(new ConnectorSplitBatch(connectorSplits, isFinished()));
     }
 
     @Override
@@ -155,6 +129,6 @@ public class HudiSplitSource
     @Override
     public boolean isFinished()
     {
-        return !hoodieBaseFileIterator.hasNext();
+        return !inputSplitIterator.hasNext();
     }
 }
