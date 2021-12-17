@@ -131,32 +131,39 @@ public class HudiSplitManager
             List<HivePartitionKey> partitionKeys = getPartitionKeys(table, partition);
             partitionKeys.forEach(p -> log.warn("Fetched partitions from HiveUtil: " + p));
 
-            InputFormat inputFormat = HiveUtil.getInputFormat(conf, schema, false);
-            log.debug(">>> Check for inputFormat: " + isHudiParquetInputFormat(inputFormat));
-
-            try {
-                if (isHudiParquetInputFormat(inputFormat)) {
-                    fileStatuses = Optional.of(((HoodieParquetInputFormat) inputFormat).listStatus(toJobConf(conf)));
-                }
-                if (fileStatuses.isPresent()) {
-                    log.debug(">>> Total Files: " + fileStatuses.get().length);
-                    if (fileStatuses.get().length == 0 && fs != null) {
-                        fileStatuses = Optional.of(fs.listStatus(new Path(dataDir)));
-                        log.debug(">>> Total Files: " + fileStatuses.get().length);
-                    }
-                }
-                log.debug(">>> Total Splits: " + inputFormat.getSplits(toJobConf(conf), 0).length);
-            }
-            catch (IOException e) {
-                e.printStackTrace();
-            }
+            fileStatuses = getFileStatuses(fs, conf, dataDir, fileStatuses, schema);
             splitSource = new HudiSplitSource(hudiTable, conf, partitionKeys, isHudiMetadataEnabled(session), fileStatuses, tablePath, dataDir);
         }
         else {
             // no partitions, so data dir is same as table path
+            Properties schema = getPartitionSchema(table, Optional.empty());
+            fileStatuses = getFileStatuses(fs, conf, tablePath, fileStatuses, schema);
             splitSource = new HudiSplitSource(hudiTable, conf, ImmutableList.of(), isHudiMetadataEnabled(session), fileStatuses, tablePath, tablePath);
         }
 
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
+    }
+
+    private static Optional<FileStatus[]> getFileStatuses(FileSystem fs, Configuration conf, String tablePath, Optional<FileStatus[]> fileStatuses, Properties schema)
+    {
+        InputFormat inputFormat = HiveUtil.getInputFormat(conf, schema, false);
+        log.debug(">>> Check for inputFormat: " + isHudiParquetInputFormat(inputFormat));
+
+        try {
+            if (isHudiParquetInputFormat(inputFormat)) {
+                fileStatuses = Optional.of(((HoodieParquetInputFormat) inputFormat).listStatus(toJobConf(conf)));
+            }
+            if (fileStatuses.isPresent()) {
+                log.debug(">>> Total Files: " + fileStatuses.get().length);
+                if (fileStatuses.get().length == 0 && fs != null) {
+                    fileStatuses = Optional.of(fs.listStatus(new Path(tablePath)));
+                    log.debug(">>> Total Files: " + fileStatuses.get().length);
+                }
+            }
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+        return fileStatuses;
     }
 }
