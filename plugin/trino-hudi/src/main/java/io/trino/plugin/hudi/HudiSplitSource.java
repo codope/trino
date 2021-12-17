@@ -97,7 +97,7 @@ public class HudiSplitSource
         else {
             this.hoodieBaseFileIterator = fileSystemView.getLatestBaseFiles(partition).iterator();
         }
-        this.maxSplitSize = HudiSessionProperties.getMaxSplitSize(session);
+        this.maxSplitSize = DataSize.ofBytes(32 * 1024 * 1024);
     }
 
     @Override
