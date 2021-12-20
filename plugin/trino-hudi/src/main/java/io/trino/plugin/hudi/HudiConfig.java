@@ -27,6 +27,7 @@ public class HudiConfig
 {
     private HoodieFileFormat fileFormat = PARQUET;
     private boolean metadataEnabled;
+    private boolean splitInSource = false;
     private DataSize maxSplitSize = DataSize.ofBytes(128 * 1024 * 1024);
 
     @NotNull
@@ -67,5 +68,19 @@ public class HudiConfig
     public DataSize getMaxSplitSize()
     {
         return this.maxSplitSize;
+    }
+
+    @Config("hudi.split_in_source")
+    @ConfigDescription("Whether to split files in the HudiSplitSource.  If false, done in HudiSplitManager.")
+    public HudiConfig setSplitInSource(boolean splitInSource)
+    {
+        this.splitInSource = splitInSource;
+        return this;
+    }
+
+    @NotNull
+    public boolean isSplitInSource()
+    {
+        return this.splitInSource;
     }
 }

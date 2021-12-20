@@ -27,15 +27,27 @@ import io.trino.spi.type.Decimals;
 import io.trino.spi.type.StandardTypes;
 import io.trino.spi.type.TypeSignature;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.BlockLocation;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputFormat;
+import org.apache.hadoop.mapred.InputSplit;
+import org.apache.hadoop.mapred.JobConf;
+import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
+import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
 
+import java.io.IOException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +63,12 @@ import static java.lang.Float.floatToRawIntBits;
 import static java.lang.Float.parseFloat;
 import static java.lang.Long.parseLong;
 import static java.lang.String.format;
+import static org.apache.hadoop.mapred.FileInputFormat.NUM_INPUT_FILES;
 
 public class HudiUtil
 {
+    private static final double SPLIT_SLOP = 1.1;   // 10% slop
+
     private static final Logger log = Logger.get(HudiUtil.class);
 
     private HudiUtil() {}
@@ -143,5 +158,111 @@ public class HudiUtil
                     format("Can not parse partition value '%s' of type '%s' for partition column '%s'",
                             partitionValue, partitionDataType, partitionColumnName));
         }
+    }
+
+    public static InputSplit[] getSplits(FileStatus[] fileStatuses, JobConf job, int numSplits,
+                                         HoodieParquetInputFormat inputFormat) throws IOException {
+        // Save the number of input files for metrics/loadgen
+        job.setLong(NUM_INPUT_FILES, fileStatuses.length);
+        long totalSize = 0;                           // compute total size
+        for (FileStatus file: fileStatuses) {                // check we have valid files
+            if (file.isDirectory()) {
+                throw new IOException("Not a file: " + file.getPath());
+            }
+            totalSize += file.getLen();
+        }
+
+        long goalSize = totalSize / (numSplits == 0 ? 1 : numSplits);
+        long minSize = Math.max(job.getLong(org.apache.hadoop.mapreduce.lib.input.
+                FileInputFormat.SPLIT_MINSIZE, 1), 1);
+
+        // generate splits
+        ArrayList<FileSplit> splits = new ArrayList<FileSplit>(numSplits);
+        NetworkTopology clusterMap = new NetworkTopology();
+        for (FileStatus file: fileStatuses) {
+            Path path = file.getPath();
+            long length = file.getLen();
+            if (length != 0) {
+                FileSystem fs = path.getFileSystem(job);
+                BlockLocation[] blkLocations;
+                if (file instanceof LocatedFileStatus) {
+                    blkLocations = ((LocatedFileStatus) file).getBlockLocations();
+                } else {
+                    blkLocations = fs.getFileBlockLocations(file, 0, length);
+                }
+                if (isSplitable(fs, path)) {
+                    long blockSize = file.getBlockSize();
+                    long splitSize = computeSplitSize(goalSize, minSize, blockSize);
+
+                    long bytesRemaining = length;
+                    while (((double) bytesRemaining)/splitSize > SPLIT_SLOP) {
+                        String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations,
+                                length-bytesRemaining, splitSize, clusterMap);
+                        splits.add(makeSplit(path, length-bytesRemaining, splitSize,
+                                splitHosts[0], splitHosts[1]));
+                        bytesRemaining -= splitSize;
+                    }
+
+                    if (bytesRemaining != 0) {
+                        String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length
+                                - bytesRemaining, bytesRemaining, clusterMap);
+                        splits.add(makeSplit(path, length - bytesRemaining, bytesRemaining,
+                                splitHosts[0], splitHosts[1]));
+                    }
+                } else {
+                    String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations,0,length,clusterMap);
+                    splits.add(makeSplit(path, 0, length, splitHosts[0], splitHosts[1]));
+                }
+            } else {
+                //Create empty hosts array for zero length files
+                splits.add(makeSplit(path, 0, length, new String[0]));
+            }
+        }
+        return splits.toArray(new FileSplit[splits.size()]);
+    }
+
+    private static boolean isSplitable(FileSystem fs, Path filename) {
+        return !(filename instanceof PathWithBootstrapFileStatus);
+    }
+
+    private static long computeSplitSize(long goalSize, long minSize,
+                          long blockSize) {
+        return Math.max(minSize, Math.min(goalSize, blockSize));
+    }
+
+    private static FileSplit makeSplit(Path file, long start, long length,
+                                  String[] hosts) {
+        return new FileSplit(file, start, length, hosts);
+    }
+
+    private static FileSplit makeSplit(Path file, long start, long length,
+                                  String[] hosts, String[] inMemoryHosts) {
+        return new FileSplit(file, start, length, hosts, inMemoryHosts);
+    }
+
+    private static String[][] getSplitHostsAndCachedHosts(BlockLocation[] blkLocations,
+                                                   long offset, long splitSize, NetworkTopology clusterMap)
+            throws IOException {
+
+        int startIndex = getBlockIndex(blkLocations, offset);
+
+        return new String[][]{blkLocations[startIndex].getHosts(),
+                    blkLocations[startIndex].getCachedHosts()};
+    }
+
+    private static int getBlockIndex(BlockLocation[] blkLocations,
+                                long offset) {
+        for (int i = 0 ; i < blkLocations.length; i++) {
+            // is the offset inside this block?
+            if ((blkLocations[i].getOffset() <= offset) &&
+                    (offset < blkLocations[i].getOffset() + blkLocations[i].getLength())){
+                return i;
+            }
+        }
+        BlockLocation last = blkLocations[blkLocations.length -1];
+        long fileLength = last.getOffset() + last.getLength() -1;
+        throw new IllegalArgumentException("Offset " + offset +
+                " is outside of file (0.." +
+                fileLength + ")");
     }
 }
