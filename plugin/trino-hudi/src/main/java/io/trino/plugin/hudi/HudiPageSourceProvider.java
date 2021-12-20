@@ -35,6 +35,7 @@ import io.trino.plugin.hive.parquet.HdfsParquetDataSource;
 import io.trino.plugin.hive.parquet.ParquetPageSource;
 import io.trino.plugin.hive.parquet.ParquetReaderConfig;
 import io.trino.spi.TrinoException;
+import io.trino.spi.block.Block;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorPageSource;
 import io.trino.spi.connector.ConnectorPageSourceProvider;
@@ -44,6 +45,7 @@ import io.trino.spi.connector.ConnectorTableHandle;
 import io.trino.spi.connector.ConnectorTransactionHandle;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.predicate.TupleDomain;
+import io.trino.spi.predicate.Utils;
 import io.trino.spi.security.ConnectorIdentity;
 import io.trino.spi.type.Type;
 import org.apache.hadoop.conf.Configuration;
@@ -67,7 +69,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TimeZone;
+import java.util.stream.Collectors;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static io.trino.memory.context.AggregatedMemoryContext.newSimpleAggregatedMemoryContext;
 import static io.trino.parquet.ParquetTypeUtils.getColumnIO;
 import static io.trino.parquet.ParquetTypeUtils.getDescriptors;
@@ -86,9 +90,11 @@ import static io.trino.plugin.hive.parquet.ParquetPageSourceFactory.getParquetTy
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_BAD_DATA;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_MISSING_DATA;
+import static io.trino.plugin.hudi.HudiUtil.convertPartitionValue;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 import static java.util.stream.Collectors.toUnmodifiableList;
 
 public class HudiPageSourceProvider
@@ -133,15 +139,20 @@ public class HudiPageSourceProvider
         List<HiveColumnHandle> hiveColumns = columns.stream()
                 .map(HiveColumnHandle.class::cast)
                 .collect(toList());
+        // just send regular columns to create parquet page source
+        // for partition columns, separate blocks will be created
+        List<HiveColumnHandle> regularColumns = hiveColumns.stream()
+                .filter(columnHandle -> !columnHandle.isPartitionKey())
+                .collect(Collectors.toList());
         Configuration configuration = hdfsEnvironment.getConfiguration(new HdfsContext(session), path);
-        return createParquetPageSource(
+        ConnectorPageSource dataPageSource = createParquetPageSource(
                 hdfsEnvironment,
                 configuration,
                 path,
                 start,
                 length,
                 estimatedFileSize,
-                hiveColumns,
+                regularColumns,
                 true,
                 split.getPredicate(),
                 fileFormatDataSourceStats,
@@ -149,6 +160,11 @@ public class HudiPageSourceProvider
                 parquetReaderOptions,
                 session.getIdentity(),
                 split.getPartitionKeys());
+
+        return new HudiPageSource(
+                hiveColumns,
+                convertPartitionValues(hiveColumns, split.getPartitionKeys()), // create blocks for partition values
+                dataPageSource);
     }
 
     private static ConnectorPageSource createParquetPageSource(
@@ -167,7 +183,7 @@ public class HudiPageSourceProvider
             ConnectorIdentity identity,
             List<HivePartitionKey> partitionKeys)
     {
-        log.debug(">>> Creating Parquet Page Source with partition keys: " + partitionKeys);
+        log.warn(">>> Creating Parquet Page Source with partition keys: %s, columns: %s, predicate: %s", partitionKeys, columns, effectivePredicate);
 
         ParquetDataSource dataSource = null;
         // TODO: Reuse some elements of ParquetPageSourceFactory and extract the try block to a new HudiParquetReader class.
@@ -179,6 +195,7 @@ public class HudiPageSourceProvider
             ParquetMetadata parquetMetadata = hdfsEnvironment.doAs(identity, () -> MetadataReader.readFooter(theDataSource));
             FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
             MessageType fileSchema = fileMetaData.getSchema();
+            log.warn(">>> File Schema: " + fileSchema.toString());
 
             Optional<MessageType> message = projectSufficientColumns(columns)
                     .map(projection -> projection.get().stream()
@@ -193,12 +210,15 @@ public class HudiPageSourceProvider
                     .reduce(MessageType::union);
 
             MessageType requestedSchema = message.orElse(new MessageType(fileSchema.getName(), ImmutableList.of()));
+            log.warn(">>> Requested Schema: " + requestedSchema);
             MessageColumnIO messageColumn = getColumnIO(fileSchema, requestedSchema);
 
             Map<List<String>, RichColumnDescriptor> descriptorsByPath = getDescriptors(fileSchema, requestedSchema);
+            log.warn(">>> Ignore stats: " + options.isIgnoreStatistics());
             TupleDomain<ColumnDescriptor> parquetTupleDomain = options.isIgnoreStatistics()
                     ? TupleDomain.all()
                     : getParquetTupleDomain(descriptorsByPath, effectivePredicate, fileSchema, useParquetColumnNames);
+            log.warn(">>> ParquetTupleDomain: %s", parquetTupleDomain.toString());
 
             Predicate parquetPredicate = buildPredicate(requestedSchema, parquetTupleDomain, descriptorsByPath, timeZone);
 
@@ -217,6 +237,8 @@ public class HudiPageSourceProvider
                 }
                 nextStart += block.getRowCount();
             }
+
+            log.warn("Message Column: %s, Predicate: %s, ColumnIndexes: %s", messageColumn, parquetPredicate.toString(), columnIndexes.build());
             ParquetReader parquetReader = new ParquetReader(
                     Optional.ofNullable(fileMetaData.getCreatedBy()),
                     messageColumn,
@@ -229,16 +251,17 @@ public class HudiPageSourceProvider
                     parquetPredicate,
                     columnIndexes.build());
             Optional<ReaderColumns> readerProjections = projectBaseColumns(columns);
+            log.warn("Reade columns: %s", readerProjections.orElse(null));
             List<HiveColumnHandle> baseColumns = readerProjections.map(projection ->
                             projection.get().stream()
                                     .map(HiveColumnHandle.class::cast)
                                     .collect(toUnmodifiableList()))
                     .orElse(columns);
+            log.warn("Base columns: %s", baseColumns);
 
-            // TODO: add a check for patition column type
-            /*for (HiveColumnHandle column : baseColumns) {
+            for (HiveColumnHandle column : baseColumns) {
                 checkArgument(column == PARQUET_ROW_INDEX_COLUMN || column.getColumnType() == REGULAR, "column type must be REGULAR: %s", column);
-            }*/
+            }
 
             ImmutableList.Builder<Type> trinoTypes = ImmutableList.builder();
             ImmutableList.Builder<Optional<Field>> internalFields = ImmutableList.builder();
@@ -257,6 +280,10 @@ public class HudiPageSourceProvider
                             }));
                 }
             }
+
+            log.warn("Trino types: %s", trinoTypes.build());
+            log.warn("Internal fields: %s", internalFields.build());
+            log.warn("Row index: %s", rowIndexColumns.build());
 
             return new ParquetPageSource(
                     parquetReader,
@@ -286,5 +313,22 @@ public class HudiPageSourceProvider
             }
             throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, message, e);
         }
+    }
+
+    private Map<String, Block> convertPartitionValues(
+            List<HiveColumnHandle> allColumns,
+            List<HivePartitionKey> partitionKeys)
+    {
+        log.warn(">>> Converting partition values for columns: %s, partition key: %s", allColumns, partitionKeys);
+        return allColumns.stream()
+                .filter(HiveColumnHandle::isPartitionKey)
+                .collect(toMap(
+                        HiveColumnHandle::getName,
+                        columnHandle -> Utils.nativeValueToBlock(
+                                columnHandle.getType(),
+                                convertPartitionValue(
+                                        columnHandle.getName(),
+                                        partitionKeys.get(0).getValue(),
+                                        columnHandle.getType().getTypeSignature()))));
     }
 }
