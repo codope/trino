@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
 
 public class HudiTableHandle
@@ -138,6 +139,19 @@ public class HudiTableHandle
     public SchemaTableName getSchemaTableName()
     {
         return new SchemaTableName(schemaName, tableName);
+    }
+
+    HudiTableHandle withPredicate(TupleDomain<HiveColumnHandle> predicate)
+    {
+        checkState(this.predicate.isAll(), "There is already a predicate.");
+        return new HudiTableHandle(
+                schemaName,
+                tableName,
+                basePath,
+                tableType,
+                predicate,
+                partitions,
+                metaClient);
     }
 
     @Override

@@ -33,6 +33,8 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableHandle;
 import io.trino.spi.connector.ConnectorTableMetadata;
 import io.trino.spi.connector.ConnectorTableProperties;
+import io.trino.spi.connector.Constraint;
+import io.trino.spi.connector.ConstraintApplicationResult;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
@@ -64,6 +66,7 @@ import static io.trino.plugin.hive.util.HiveUtil.columnExtraInfo;
 import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
 import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
+import static io.trino.plugin.hudi.HudiUtil.splitPredicate;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
@@ -121,6 +124,24 @@ public class HudiMetadata
     {
         HudiTableHandle hudiTableHandle = (HudiTableHandle) table;
         return getTableMetadata(session, hudiTableHandle.getSchemaTableName());
+    }
+
+    @Override
+    public Optional<ConstraintApplicationResult<ConnectorTableHandle>> applyFilter(ConnectorSession session, ConnectorTableHandle tableHandle, Constraint constraint)
+    {
+        HudiTableHandle handle = (HudiTableHandle) tableHandle;
+        if (constraint.getSummary().equals(handle.getPredicate())) {
+            return Optional.empty();
+        }
+
+        List<TupleDomain<ColumnHandle>> predicate = splitPredicate(constraint.getSummary());
+        TupleDomain<ColumnHandle> unenforcedPredicate = predicate.get(1);
+        HudiTableHandle newHudiTableHandle = handle.withPredicate(constraint.getSummary().transformKeys(HiveColumnHandle.class::cast));
+
+        return Optional.of(new ConstraintApplicationResult<>(
+                newHudiTableHandle,
+                unenforcedPredicate,
+                false));
     }
 
     private ConnectorTableMetadata getTableMetadata(ConnectorSession session, SchemaTableName tableName)

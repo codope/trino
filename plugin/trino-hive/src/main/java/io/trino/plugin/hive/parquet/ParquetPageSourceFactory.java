@@ -16,6 +16,7 @@ package io.trino.plugin.hive.parquet;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import io.airlift.log.Logger;
 import io.trino.parquet.Field;
 import io.trino.parquet.ParquetCorruptionException;
 import io.trino.parquet.ParquetDataSource;
@@ -104,6 +105,7 @@ import static org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector.Cate
 public class ParquetPageSourceFactory
         implements HivePageSourceFactory
 {
+    private static final Logger log = Logger.get(ParquetPageSourceFactory.class);
     /**
      * If this object is passed as one of the columns for {@code createPageSource},
      * it will be populated as an additional column containing the index of each
@@ -199,6 +201,7 @@ public class ParquetPageSourceFactory
     {
         // Ignore predicates on partial columns for now.
         effectivePredicate = effectivePredicate.filter((column, domain) -> column.isBaseColumn());
+        log.warn(">>> Creating Parquet Page Source with columns: %s, predicate: %s", columns, effectivePredicate);
 
         MessageType fileSchema;
         MessageType requestedSchema;
@@ -213,6 +216,7 @@ public class ParquetPageSourceFactory
             ParquetMetadata parquetMetadata = MetadataReader.readFooter(dataSource);
             FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
             fileSchema = fileMetaData.getSchema();
+            log.warn(">>> File Schema: " + fileSchema.toString());
 
             Optional<MessageType> message = projectSufficientColumns(columns)
                     .map(projection -> projection.get().stream()
@@ -227,12 +231,14 @@ public class ParquetPageSourceFactory
                     .reduce(MessageType::union);
 
             requestedSchema = message.orElse(new MessageType(fileSchema.getName(), ImmutableList.of()));
+            log.warn(">>> Requested Schema: " + requestedSchema);
             messageColumn = getColumnIO(fileSchema, requestedSchema);
-
+            log.warn(">>> Ignore stats: " + options.isIgnoreStatistics());
             Map<List<String>, RichColumnDescriptor> descriptorsByPath = getDescriptors(fileSchema, requestedSchema);
             TupleDomain<ColumnDescriptor> parquetTupleDomain = options.isIgnoreStatistics()
                     ? TupleDomain.all()
                     : getParquetTupleDomain(descriptorsByPath, effectivePredicate, fileSchema, useColumnNames);
+            log.warn(">>> ParquetTupleDomain: %s", parquetTupleDomain.toString());
 
             Predicate parquetPredicate = buildPredicate(requestedSchema, parquetTupleDomain, descriptorsByPath, timeZone);
 
@@ -251,6 +257,7 @@ public class ParquetPageSourceFactory
                 }
                 nextStart += block.getRowCount();
             }
+            log.warn("Message Column: %s, Predicate: %s, ColumnIndexes: %s", messageColumn, parquetPredicate.toString(), columnIndexes.build());
             parquetReader = new ParquetReader(
                     Optional.ofNullable(fileMetaData.getCreatedBy()),
                     messageColumn,
@@ -290,10 +297,12 @@ public class ParquetPageSourceFactory
 
         Optional<ReaderColumns> readerProjections = projectBaseColumns(columns);
         List<HiveColumnHandle> baseColumns = readerProjections.map(projection ->
-                projection.get().stream()
-                        .map(HiveColumnHandle.class::cast)
-                        .collect(toUnmodifiableList()))
+                        projection.get().stream()
+                                .map(HiveColumnHandle.class::cast)
+                                .collect(toUnmodifiableList()))
                 .orElse(columns);
+        log.warn("Reader columns: %s", readerProjections.orElse(null));
+        log.warn("Base columns: %s", baseColumns);
 
         for (HiveColumnHandle column : baseColumns) {
             checkArgument(column == PARQUET_ROW_INDEX_COLUMN || column.getColumnType() == REGULAR, "column type must be REGULAR: %s", column);
@@ -316,6 +325,10 @@ public class ParquetPageSourceFactory
                         }));
             }
         }
+
+        log.warn("Trino types: %s", trinoTypes.build());
+        log.warn("Internal fields: %s", internalFields.build());
+        log.warn("Row index: %s", rowIndexColumns.build());
 
         ConnectorPageSource parquetPageSource = new ParquetPageSource(
                 parquetReader,
@@ -412,6 +425,8 @@ public class ParquetPageSourceFactory
             return TupleDomain.none();
         }
 
+        descriptorsByPath.forEach((key, value) -> log.warn(">>> descriptorsByPath KEY: %s,  VALUE: %s", key, value.toString()));
+
         ImmutableMap.Builder<ColumnDescriptor, Domain> predicate = ImmutableMap.builder();
         for (Entry<HiveColumnHandle, Domain> entry : effectivePredicate.getDomains().get().entrySet()) {
             HiveColumnHandle columnHandle = entry.getKey();
@@ -423,12 +438,14 @@ public class ParquetPageSourceFactory
             RichColumnDescriptor descriptor;
             if (useColumnNames) {
                 descriptor = descriptorsByPath.get(ImmutableList.of(columnHandle.getName()));
+                log.warn(">>> Descriptor: %s, Column Handle: %s", descriptor, columnHandle);
             }
             else {
                 org.apache.parquet.schema.Type parquetField = getParquetType(columnHandle, fileSchema, false);
                 if (parquetField == null || !parquetField.isPrimitive()) {
                     // Parquet file has fewer column than partition
                     // Or the field is a complex type
+                    log.warn(String.valueOf(">>> Parquet file has fewer column than partition: " + parquetField == null));
                     continue;
                 }
                 descriptor = descriptorsByPath.get(ImmutableList.of(parquetField.getName()));
@@ -437,6 +454,7 @@ public class ParquetPageSourceFactory
                 predicate.put(descriptor, entry.getValue());
             }
         }
+        log.warn(">>> Predicates: " + predicate.build());
         return TupleDomain.withColumnDomains(predicate.build());
     }
 
