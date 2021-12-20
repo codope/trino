@@ -35,6 +35,7 @@ public class HudiSessionProperties
     private static final String FILE_FORMAT = "file_format";
     private static final String METADATA_ENABLED = "metadata_enabled";
     private static final String MAX_SPLIT_SIZE = "max_split_size";
+    private static final String SPLIT_IN_SOURCE = "split_in_source";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -52,6 +53,11 @@ public class HudiSessionProperties
                         METADATA_ENABLED,
                         "For Hudi tables prefer to fetch the list of files from its metadata",
                         hudiConfig.isMetadataEnabled(),
+                        false),
+                booleanProperty(
+                        SPLIT_IN_SOURCE,
+                        "Whether to split files in the HudiSplitSource.  If false, done in HudiSplitManager.",
+                        hudiConfig.isSplitInSource(),
                         false),
                 dataSizeProperty(
                         MAX_SPLIT_SIZE,
@@ -79,5 +85,10 @@ public class HudiSessionProperties
     public static DataSize getMaxSplitSize(ConnectorSession session)
     {
         return session.getProperty(MAX_SPLIT_SIZE, DataSize.class);
+    }
+
+    public static boolean isSplitInSource(ConnectorSession session)
+    {
+        return session.getProperty(SPLIT_IN_SOURCE, Boolean.class);
     }
 }
