@@ -38,37 +38,30 @@ import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.FileInputFormat;
-import org.apache.hadoop.mapred.InputSplit;
-import org.apache.hadoop.mapred.JobConf;
-import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
-import org.apache.hudi.exception.HoodieIOException;
-import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 
 import javax.inject.Inject;
 
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.Maps.fromProperties;
-import static io.trino.plugin.hive.util.ConfigurationUtils.toJobConf;
 import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static io.trino.plugin.hudi.HudiUtil.getPartitionSchema;
 import static java.util.Objects.requireNonNull;
-import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_LOCATION;
 import static org.apache.hudi.common.table.timeline.TimelineUtils.getPartitionsWritten;
 
 public class HudiSplitManager
         implements ConnectorSplitManager
 {
+    public static final Pattern HOODIE_CONSUME_MODE_PATTERN_STRING = Pattern.compile("hoodie\\.(.*)\\.consume\\.mode");
     private static final Logger log = Logger.get(HudiSplitManager.class);
 
     private final HudiTransactionManager transactionManager;
@@ -106,8 +99,14 @@ public class HudiSplitManager
             e.printStackTrace();
         }
         Configuration conf = hdfsEnvironment.getConfiguration(context, new Path(table.getStorage().getLocation()));
+        Map<String, String> valByRegex = conf.getValByRegex(HOODIE_CONSUME_MODE_PATTERN_STRING.pattern());
+        log.debug("Hoodie consume mode: " + valByRegex);
         HoodieTableMetaClient metaClient = hudiTable.getMetaClient().orElseGet(() -> getMetaClient(conf, hudiTable.getBasePath()));
         List<String> partitionValues = getPartitionsWritten(metaClient.getActiveTimeline());
+        log.debug("HudiSplitManager ref: " + this.toString());
+        log.debug("Table ref: " + table.toString());
+        log.debug("HoodieTableMetaClient ref: " + metaClient.toString());
+        log.debug("HoodieTableMetaClient base path: " + metaClient.getBasePath());
         log.warn("Fetched partitions from Hudi: " + partitionValues);
         hudiTable.getPartitions().ifPresent(p -> p.forEach(p1 -> log.warn("Partitions from TableHandle: " + p1)));
 
@@ -119,6 +118,7 @@ public class HudiSplitManager
         String tablePath = table.getStorage().getLocation();
         List<HivePartitionKey> partitionKeys = ImmutableList.of();
         Properties schema;
+        Iterator<String> relativePartitionPaths;
         if (!columnNames.isEmpty()) {
             List<List<String>> partitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
                     .orElseThrow(() -> new TableNotFoundException(hudiTable.getSchemaTableName()))
@@ -147,6 +147,7 @@ public class HudiSplitManager
             partitionValues = ImmutableList.of("");
         }
 
+        /*
         // Non Hudi table should also be compatible with HoodieParquetInputFormat
         HoodieParquetInputFormat inputFormat = new HoodieParquetInputFormat();
         inputFormat.setConf(conf);
@@ -168,6 +169,11 @@ public class HudiSplitManager
         catch (IOException e) {
             throw new HoodieIOException("Error getting input splits", e);
         }
+        */
+        relativePartitionPaths = partitionValues.iterator();
+        splitSource = new HudiSplitSource(session, hudiTable, conf, partitionKeys, relativePartitionPaths,
+                isHudiMetadataEnabled(session), tablePath);
+        return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 
     void printConf(Configuration conf)
