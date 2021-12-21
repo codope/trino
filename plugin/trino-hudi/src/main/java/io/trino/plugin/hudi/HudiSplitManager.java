@@ -18,12 +18,12 @@ import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
+import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
-import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
@@ -33,7 +33,6 @@ import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
-import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -44,12 +43,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static java.util.Objects.requireNonNull;
@@ -108,6 +105,7 @@ public class HudiSplitManager
         HudiSplitSource splitSource;
         Map<String, List<HivePartitionKey>> partitionMap;
         if (!columnNames.isEmpty()) {
+            /*
             List<String> rawPartitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
                     .orElseThrow(() -> new TableNotFoundException(hudiTable.getSchemaTableName()));
 
@@ -117,6 +115,10 @@ public class HudiSplitManager
             partitionMap = rawPartitionNames.stream()
                     .collect(Collectors.toMap(Function.identity(), relativePartitionPath -> getPartitionKeys(table,
                             metastore.getPartition(identity, table, HiveUtil.toPartitionValues(relativePartitionPath)))));
+
+            */
+            partitionMap = hudiTable.getPartitions().get().stream()
+                    .collect(Collectors.toMap(HivePartition::getPartitionId, e -> new ArrayList<>()));
         }
         else {
             // no partitions, so data dir is same as table path
@@ -125,6 +127,7 @@ public class HudiSplitManager
             partitionMap.put("", new ArrayList<>());
         }
 
+        log.debug("Partition map: " + partitionMap);
         splitSource = new HudiSplitSource(session, hudiTable, conf, partitionMap,
                 isHudiMetadataEnabled(session));
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
