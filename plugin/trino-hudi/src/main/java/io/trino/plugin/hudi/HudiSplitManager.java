@@ -22,7 +22,6 @@ import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
-import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.connector.ConnectorSession;
@@ -41,18 +40,18 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import javax.inject.Inject;
 
-import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
+import java.util.function.Function;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
-import static io.trino.plugin.hudi.HudiUtil.getPartitionSchema;
 import static java.util.Objects.requireNonNull;
 import static org.apache.hudi.common.table.timeline.TimelineUtils.getPartitionsWritten;
 
@@ -107,34 +106,26 @@ public class HudiSplitManager
                 .collect(toImmutableList());
         log.warn("Column Names: " + columnNames);
         HudiSplitSource splitSource;
-        List<HivePartitionKey> partitionKeys = ImmutableList.of();
-        Properties schema;
-        Iterator<String> relativePartitionPaths;
+        Map<String, List<HivePartitionKey>> partitionMap;
         if (!columnNames.isEmpty()) {
-            List<List<String>> partitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
-                    .orElseThrow(() -> new TableNotFoundException(hudiTable.getSchemaTableName()))
-                    .stream()
-                    .map(HiveUtil::toPartitionValues)
-                    .collect(toImmutableList());
-            log.warn("Partition Names: " + partitionNames);
+            List<String> rawPartitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
+                    .orElseThrow(() -> new TableNotFoundException(hudiTable.getSchemaTableName()));
 
-            Optional<Partition> partition = metastore.getPartition(identity, table, partitionNames.get(0));
-            schema = getPartitionSchema(table, partition);
+            log.warn("rawPartitionNames: " + rawPartitionNames);
 
-            log.warn("Fetched partitions from Metastore: " + partition.get());
-            log.warn("Partition schema: " + schema);
-
-            partitionKeys = getPartitionKeys(table, partition);
-            partitionKeys.forEach(p -> log.warn("Fetched partitions from HiveUtil: " + p));
+            // relative partition path -> Hive partition
+            partitionMap = rawPartitionNames.stream()
+                    .collect(Collectors.toMap(Function.identity(), relativePartitionPath -> getPartitionKeys(table,
+                            metastore.getPartition(identity, table, HiveUtil.toPartitionValues(relativePartitionPath)))));
         }
         else {
             // no partitions, so data dir is same as table path
-            schema = getPartitionSchema(table, Optional.empty());
             partitionValues = ImmutableList.of("");
+            partitionMap = new HashMap<>();
+            partitionMap.put("", new ArrayList<>());
         }
 
-        relativePartitionPaths = partitionValues.iterator();
-        splitSource = new HudiSplitSource(session, hudiTable, conf, partitionKeys, relativePartitionPaths,
+        splitSource = new HudiSplitSource(session, hudiTable, conf, partitionMap,
                 isHudiMetadataEnabled(session));
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
