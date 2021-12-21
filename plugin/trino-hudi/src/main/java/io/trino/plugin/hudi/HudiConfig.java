@@ -27,7 +27,7 @@ public class HudiConfig
 {
     private HoodieFileFormat fileFormat = PARQUET;
     private boolean metadataEnabled;
-    private boolean splitInSource = false;
+    private boolean splitInSource;
     private DataSize maxSplitSize = DataSize.ofBytes(128 * 1024 * 1024);
 
     @NotNull
