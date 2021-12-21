@@ -35,8 +35,10 @@ import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static com.google.common.collect.Iterators.limit;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
@@ -56,7 +58,6 @@ public class HudiSplitSource
     private final boolean metadataEnabled;
     private final Optional<FileStatus[]> fileStatuses;
     private final String tablePath;
-    private final String dataDir;
 
     public HudiSplitSource(
             HudiTableHandle tableHandle,
@@ -65,14 +66,13 @@ public class HudiSplitSource
             boolean metadataEnabled,
             Optional<FileStatus[]> fileStatuses,
             String tablePath,
-            String dataDir)
+            Map<HivePartitionKey, Path> dataDir)
     {
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
         this.partitionKeys = requireNonNull(partitionKeys, "partitionKeys is null");
         this.metadataEnabled = metadataEnabled;
         this.fileStatuses = fileStatuses;
         this.tablePath = tablePath;
-        this.dataDir = dataDir;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         HoodieEngineContext engineContext = new HoodieLocalEngineContext(conf);
         HoodieMetadataConfig metadataConfig = HoodieMetadataConfig.newBuilder()
@@ -80,16 +80,26 @@ public class HudiSplitSource
                 .build();
         this.fileSystemView = FileSystemViewManager.createInMemoryFileSystemView(engineContext, metaClient, metadataConfig);
 
-        log.debug("Table path: %s \nDirectory: %s", tablePath, dataDir);
-        String partition = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir));
-        log.debug("Partition: %s", partition);
-        if (fileStatuses.isPresent()) {
-            log.warn(">>> FileStatus present adding to view: %s", fileStatuses.get().length);
-            fileSystemView.addFilesToView(fileStatuses.get());
-            this.hoodieBaseFileIterator = fileSystemView.fetchLatestBaseFiles(partition).iterator();
+        if (partitionKeys.isEmpty()) {
+            String partition = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(tablePath));
+            this.hoodieBaseFileIterator = fileSystemView.getLatestBaseFiles(partition).iterator();
         }
         else {
-            this.hoodieBaseFileIterator = fileSystemView.getLatestBaseFiles(partition).iterator();
+            ImmutableList.Builder<HoodieBaseFile> baseFiles = ImmutableList.builder();
+            fileSystemView.addFilesToView(fileStatuses.orElseGet(() -> new FileStatus[0]));
+            for (HivePartitionKey partitionKey : partitionKeys) {
+                log.warn("Path: %s,  Partition: %s", dataDir.get(partitionKey), partitionKey);
+                String partition = FSUtils.getRelativePartitionPath(new Path(tablePath), dataDir.get(partitionKey));
+                log.warn("Partition: %s", partition);
+                if (fileStatuses.isPresent()) {
+                    log.warn(">>> FileStatus present adding to view: %s", fileStatuses.get().length);
+                    baseFiles.addAll(fileSystemView.fetchLatestBaseFiles(partition).collect(Collectors.toList()));
+                }
+                else {
+                    baseFiles.addAll(fileSystemView.getLatestBaseFiles(partition).collect(Collectors.toList()));
+                }
+            }
+            this.hoodieBaseFileIterator = baseFiles.build().iterator();
         }
     }
 

@@ -15,6 +15,8 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
@@ -46,7 +48,10 @@ import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import javax.inject.Inject;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 
@@ -121,24 +126,37 @@ public class HudiSplitManager
                     .collect(toImmutableList());
             log.warn("Partition Names: " + partitionNames);
 
-            Optional<Partition> partition = metastore.getPartition(identity, table, partitionNames.get(0));
+            ImmutableList.Builder<HivePartitionKey> partitionKeyBuilder = ImmutableList.builder();
+            ImmutableList.Builder<FileStatus> fileStatusBuilder = ImmutableList.builder();
+            Map<HivePartitionKey, Path> partitionKeyPath = new HashMap<>();
+            for (List<String> partitionName : partitionNames) {
+                Optional<Partition> partition1 = metastore.getPartition(identity, table, partitionName);
+                Properties schema1 = getPartitionSchema(table, partition1);
+                String dataDir1 = schema1.getProperty(META_TABLE_LOCATION);
+                log.warn(">>> dataDir1: " + dataDir1);
 
-            log.warn("Fetched partitions from Metastore: " + partition.get());
-            Properties schema = getPartitionSchema(table, partition);
-            String dataDir = schema.getProperty(META_TABLE_LOCATION);
-            log.warn("Partition schema: " + schema);
+                Optional<FileStatus[]> fileStatuses1 = getFileStatuses(fs, conf, dataDir1, Optional.empty(), schema1);
+                fileStatuses1.ifPresent(fss -> fileStatusBuilder.addAll(Arrays.asList(fss)));
+                List<HivePartitionKey> partitionKeys1 = getPartitionKeys(table, partition1);
+                partitionKeys1.forEach(p -> log.warn(">>> Fetched partitions from HiveUtil: " + p));
+                partitionKeys1.forEach(partitionKey -> partitionKeyPath.putIfAbsent(partitionKey, new Path(dataDir1)));
+                partitionKeyBuilder.addAll(partitionKeys1);
+            }
 
-            List<HivePartitionKey> partitionKeys = getPartitionKeys(table, partition);
-            partitionKeys.forEach(p -> log.warn("Fetched partitions from HiveUtil: " + p));
-
-            fileStatuses = getFileStatuses(fs, conf, dataDir, fileStatuses, schema);
-            splitSource = new HudiSplitSource(hudiTable, conf, partitionKeys, isHudiMetadataEnabled(session), fileStatuses, tablePath, dataDir);
+            splitSource = new HudiSplitSource(
+                    hudiTable,
+                    conf,
+                    partitionKeyBuilder.build(),
+                    isHudiMetadataEnabled(session),
+                    Optional.of(Iterables.toArray(fileStatusBuilder.build(), FileStatus.class)),
+                    tablePath,
+                    partitionKeyPath);
         }
         else {
             // no partitions, so data dir is same as table path
             Properties schema = getPartitionSchema(table, Optional.empty());
             fileStatuses = getFileStatuses(fs, conf, tablePath, fileStatuses, schema);
-            splitSource = new HudiSplitSource(hudiTable, conf, ImmutableList.of(), isHudiMetadataEnabled(session), fileStatuses, tablePath, tablePath);
+            splitSource = new HudiSplitSource(hudiTable, conf, ImmutableList.of(), isHudiMetadataEnabled(session), fileStatuses, tablePath, ImmutableMap.of());
         }
 
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
