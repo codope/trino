@@ -36,13 +36,11 @@ import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import javax.inject.Inject;
 
-import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -91,13 +89,7 @@ public class HudiSplitManager
         Table table = metastore.getTable(identity, tableName.getSchemaName(), tableName.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(tableName));
         HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
-        FileSystem fs = null;
-        try {
-            fs = hdfsEnvironment.getFileSystem(context, new Path(table.getStorage().getLocation()));
-        }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
+
         Configuration conf = hdfsEnvironment.getConfiguration(context, new Path(table.getStorage().getLocation()));
         Map<String, String> valByRegex = conf.getValByRegex(HOODIE_CONSUME_MODE_PATTERN_STRING.pattern());
         log.debug("Hoodie consume mode: " + valByRegex);
@@ -115,7 +107,6 @@ public class HudiSplitManager
                 .collect(toImmutableList());
         log.warn("Column Names: " + columnNames);
         HudiSplitSource splitSource;
-        String tablePath = table.getStorage().getLocation();
         List<HivePartitionKey> partitionKeys = ImmutableList.of();
         Properties schema;
         Iterator<String> relativePartitionPaths;
@@ -135,11 +126,6 @@ public class HudiSplitManager
 
             partitionKeys = getPartitionKeys(table, partition);
             partitionKeys.forEach(p -> log.warn("Fetched partitions from HiveUtil: " + p));
-
-            // InputFormat inputFormat = HiveUtil.getInputFormat(conf, schema, false);
-            // log.debug(">>> Check for inputFormat: " + isHudiParquetInputFormat(inputFormat));
-            // log.debug(">>> Conf: ");
-            // printConf(conf);
         }
         else {
             // no partitions, so data dir is same as table path
@@ -147,32 +133,9 @@ public class HudiSplitManager
             partitionValues = ImmutableList.of("");
         }
 
-        /*
-        // Non Hudi table should also be compatible with HoodieParquetInputFormat
-        HoodieParquetInputFormat inputFormat = new HoodieParquetInputFormat();
-        inputFormat.setConf(conf);
-
-        JobConf jobConf = toJobConf(conf);
-        String allAbsolutePartitionPaths = partitionValues.stream().map(
-                relativePartitionPath -> FSUtils.getPartitionPath(tablePath, relativePartitionPath).toString()
-        ).collect(Collectors.joining(","));
-        FileInputFormat.setInputPaths(jobConf, allAbsolutePartitionPaths);
-        // Pass SerDes and Table parameters into input format configuration
-        fromProperties(schema).forEach(jobConf::set);
-        String dataDir = schema.getProperty(META_TABLE_LOCATION);
-        try {
-            InputSplit[] inputSplits = inputFormat.getSplits(jobConf, 0);
-            log.warn(">>> Total Splits: " + inputSplits.length);
-            splitSource = new HudiSplitSource(session, hudiTable, conf, partitionKeys, isHudiMetadataEnabled(session), inputSplits, tablePath, dataDir);
-            return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
-        }
-        catch (IOException e) {
-            throw new HoodieIOException("Error getting input splits", e);
-        }
-        */
         relativePartitionPaths = partitionValues.iterator();
         splitSource = new HudiSplitSource(session, hudiTable, conf, partitionKeys, relativePartitionPaths,
-                isHudiMetadataEnabled(session), tablePath);
+                isHudiMetadataEnabled(session));
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 

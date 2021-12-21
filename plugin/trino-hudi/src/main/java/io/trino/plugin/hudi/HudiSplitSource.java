@@ -16,7 +16,6 @@ package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
-import io.airlift.units.DataSize;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.spi.connector.ConnectorPartitionHandle;
 import io.trino.spi.connector.ConnectorSession;
@@ -54,13 +53,11 @@ public class HudiSplitSource
     private final HudiTableHandle tableHandle;
     private final FileSystem fileSystem;
     private final HoodieTableMetaClient metaClient;
-    private final DataSize maxSplitSize;
     private final List<HivePartitionKey> partitionKeys;
     private final boolean metadataEnabled;
-    private final String tablePath;
+    private final Iterator<String> relativePartitionPaths;
     private HoodieTableFileSystemView fileSystemView;
     private ArrayDeque<HoodieBaseFile> baseFiles;
-    private Iterator<String> relativePartitionPaths;
 
     public HudiSplitSource(
             ConnectorSession session,
@@ -68,8 +65,7 @@ public class HudiSplitSource
             Configuration conf,
             List<HivePartitionKey> partitionKeys,
             Iterator<String> relativePartitionPaths,
-            boolean metadataEnabled,
-            String tablePath)
+            boolean metadataEnabled)
     {
         requireNonNull(session, "session is null");
         this.conf = requireNonNull(conf, "conf is null");
@@ -77,11 +73,8 @@ public class HudiSplitSource
         this.partitionKeys = requireNonNull(partitionKeys, "partitionKeys is null");
         this.relativePartitionPaths = requireNonNull(relativePartitionPaths, "relativePartitionPaths is null");
         this.metadataEnabled = metadataEnabled;
-        this.tablePath = tablePath;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         this.fileSystem = metaClient.getFs();
-        log.debug("Table path: %s \nDirectory: %s", tablePath);
-        this.maxSplitSize = DataSize.ofBytes(32 * 1024 * 1024);
     }
 
     @Override
@@ -100,7 +93,7 @@ public class HudiSplitSource
     @Override
     public void close()
     {
-        // TODO: close file iterable
+        fileSystemView.close();
     }
 
     @Override
