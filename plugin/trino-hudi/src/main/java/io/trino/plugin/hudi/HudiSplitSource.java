@@ -32,6 +32,7 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import org.apache.hudi.exception.HoodieIOException;
+import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -139,7 +140,9 @@ public class HudiSplitSource
             while (remaining > 0 && !baseFiles.isEmpty()) {
                 HoodieBaseFile baseFile = baseFiles.pollFirst();
                 log.debug(String.format("Remaining: %d base file: %s", remaining, baseFile.getPath()));
-                List<FileSplit> fileSplits = HudiUtil.getSplits(fileSystem, baseFile.getFileStatus());
+
+                List<FileSplit> fileSplits = HudiUtil.getSplits(
+                        fileSystem, HoodieInputFormatUtils.getFileStatus(baseFile));
                 fileSplits.forEach(fileSplit -> {
                     try {
                         log.debug(String.format(">>>> File split: %s start=%d len=%d",
