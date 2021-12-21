@@ -36,8 +36,10 @@ import org.apache.hudi.exception.HoodieIOException;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -53,34 +55,35 @@ public class HudiSplitSource
     private final HudiTableHandle tableHandle;
     private final FileSystem fileSystem;
     private final HoodieTableMetaClient metaClient;
-    private final List<HivePartitionKey> partitionKeys;
+    private final Map<String, List<HivePartitionKey>> partitionMap;
     private final boolean metadataEnabled;
     private final Iterator<String> relativePartitionPaths;
+    private final Map<HoodieBaseFile, String> baseFileToPartitionMap;
+    private final ArrayDeque<HoodieBaseFile> baseFiles = new ArrayDeque<>();
     private HoodieTableFileSystemView fileSystemView;
-    private ArrayDeque<HoodieBaseFile> baseFiles;
 
     public HudiSplitSource(
             ConnectorSession session,
             HudiTableHandle tableHandle,
             Configuration conf,
-            List<HivePartitionKey> partitionKeys,
-            Iterator<String> relativePartitionPaths,
+            Map<String, List<HivePartitionKey>> partitionMap,
             boolean metadataEnabled)
     {
         requireNonNull(session, "session is null");
         this.conf = requireNonNull(conf, "conf is null");
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
-        this.partitionKeys = requireNonNull(partitionKeys, "partitionKeys is null");
-        this.relativePartitionPaths = requireNonNull(relativePartitionPaths, "relativePartitionPaths is null");
+        this.partitionMap = partitionMap;
+        this.relativePartitionPaths = requireNonNull(partitionMap.keySet().iterator(), "relativePartitionPaths is null");
         this.metadataEnabled = metadataEnabled;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         this.fileSystem = metaClient.getFs();
+        this.baseFileToPartitionMap = new HashMap<>();
     }
 
     @Override
     public CompletableFuture<ConnectorSplitBatch> getNextBatch(ConnectorPartitionHandle partitionHandle, int maxSize)
     {
-        log.debug("Getting next batch with partitionKeys: " + partitionKeys);
+        log.debug("Getting next batch with partitionKeys: " + partitionMap.keySet());
         try {
             List<ConnectorSplit> connectorSplits = getSplitsForSnapshotMode(maxSize);
             return completedFuture(new ConnectorSplitBatch(connectorSplits, isFinished()));
@@ -114,7 +117,6 @@ public class HudiSplitSource
             // Scan the file system to load the instants from timeline
             log.debug("Loading file system view for " + metaClient.getBasePath());
             this.fileSystemView = FileSystemViewManager.createInMemoryFileSystemView(engineContext, metaClient, metadataConfig);
-            this.baseFiles = new ArrayDeque<>();
         }
 
         List<ConnectorSplit> batchHudiSplits = new ArrayList<>();
@@ -126,9 +128,11 @@ public class HudiSplitSource
             if (baseFiles.isEmpty()) {
                 if (relativePartitionPaths.hasNext()) {
                     String relativePartitionPath = relativePartitionPaths.next();
+                    List<HoodieBaseFile> baseFilesToAdd = fileSystemView.getLatestBaseFiles(relativePartitionPath)
+                            .collect(Collectors.toList());
+                    baseFilesToAdd.forEach(baseFile -> baseFileToPartitionMap.put(baseFile, relativePartitionPath));
                     // TODO: skip partitions that are filtered out based on the predicate
-                    baseFiles.addAll(fileSystemView.getLatestBaseFiles(relativePartitionPath)
-                            .collect(Collectors.toList()));
+                    baseFiles.addAll(baseFilesToAdd);
                 }
             }
 
@@ -147,7 +151,7 @@ public class HudiSplitSource
                                 metaClient.getFs().getLength(fileSplit.getPath()),
                                 ImmutableList.of(),
                                 tableHandle.getPredicate(),
-                                partitionKeys));
+                                partitionMap.get(baseFileToPartitionMap.get(baseFile))));
                     }
                     catch (IOException e) {
                         throw new HoodieIOException("Unable to add splits for " + fileSplit.getPath().toString(), e);
