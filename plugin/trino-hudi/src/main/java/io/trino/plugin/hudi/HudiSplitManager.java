@@ -136,7 +136,7 @@ public class HudiSplitManager
 
         log.debug("Partition map: " + partitionMap);
         splitSource = new HudiSplitSource(session, hudiTable, conf, partitionMap,
-                isHudiMetadataEnabled(session));
+                isHudiMetadataEnabled(session), dynamicFilter);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 
