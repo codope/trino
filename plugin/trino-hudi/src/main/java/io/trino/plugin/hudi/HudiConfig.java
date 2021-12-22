@@ -16,6 +16,7 @@ package io.trino.plugin.hudi;
 
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
+import io.airlift.units.DataSize;
 import org.apache.hudi.common.model.HoodieFileFormat;
 
 import javax.validation.constraints.NotNull;
@@ -26,6 +27,8 @@ public class HudiConfig
 {
     private HoodieFileFormat fileFormat = PARQUET;
     private boolean metadataEnabled;
+    private boolean splitInSource;
+    private DataSize maxSplitSize = DataSize.ofBytes(128 * 1024 * 1024);
 
     @NotNull
     public HoodieFileFormat getFileFormat()
@@ -52,5 +55,32 @@ public class HudiConfig
     public boolean isMetadataEnabled()
     {
         return this.metadataEnabled;
+    }
+
+    @Config("hudi.max_split_size")
+    public HudiConfig setMaxSplitSize(DataSize size)
+    {
+        this.maxSplitSize = size;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getMaxSplitSize()
+    {
+        return this.maxSplitSize;
+    }
+
+    @Config("hudi.split_in_source")
+    @ConfigDescription("Whether to split files in the HudiSplitSource.  If false, done in HudiSplitManager.")
+    public HudiConfig setSplitInSource(boolean splitInSource)
+    {
+        this.splitInSource = splitInSource;
+        return this;
+    }
+
+    @NotNull
+    public boolean isSplitInSource()
+    {
+        return this.splitInSource;
     }
 }
