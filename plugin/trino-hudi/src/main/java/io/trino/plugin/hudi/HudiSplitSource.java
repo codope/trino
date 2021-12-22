@@ -21,6 +21,7 @@ import io.trino.spi.connector.ConnectorPartitionHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
+import io.trino.spi.connector.DynamicFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.mapred.FileSplit;
@@ -61,6 +62,7 @@ public class HudiSplitSource
     private final Iterator<String> relativePartitionPaths;
     private final Map<HoodieBaseFile, String> baseFileToPartitionMap;
     private final ArrayDeque<HoodieBaseFile> baseFiles = new ArrayDeque<>();
+    private final DynamicFilter dynamicFilter;
     private HoodieTableFileSystemView fileSystemView;
 
     public HudiSplitSource(
@@ -68,7 +70,8 @@ public class HudiSplitSource
             HudiTableHandle tableHandle,
             Configuration conf,
             Map<String, List<HivePartitionKey>> partitionMap,
-            boolean metadataEnabled)
+            boolean metadataEnabled,
+            DynamicFilter dynamicFilter)
     {
         requireNonNull(session, "session is null");
         this.conf = requireNonNull(conf, "conf is null");
@@ -79,11 +82,13 @@ public class HudiSplitSource
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         this.fileSystem = metaClient.getFs();
         this.baseFileToPartitionMap = new HashMap<>();
+        this.dynamicFilter = dynamicFilter;
     }
 
     @Override
     public CompletableFuture<ConnectorSplitBatch> getNextBatch(ConnectorPartitionHandle partitionHandle, int maxSize)
     {
+        log.debug("Dynamic filter: " + dynamicFilter.getColumnsCovered());
         log.debug("Getting next batch with partitionKeys: " + partitionMap.keySet());
         try {
             List<ConnectorSplit> connectorSplits = getSplitsForSnapshotMode(maxSize);
