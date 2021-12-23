@@ -158,19 +158,24 @@ public class HudiSplitSource
             log.warn("Column Names: " + columnNames);
             HudiSplitSource splitSource;
             Map<String, List<HivePartitionKey>> partitionMap = new HashMap<>();
+            List<String> fullPartitionNames = new ArrayList<>();
+            List<List<String>> partitionNameElements = new ArrayList<>();
             if (!columnNames.isEmpty()) {
-                partitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
-                        .orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()))
+                fullPartitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
+                        .orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()));
+                partitionNameElements = fullPartitionNames
                         .stream()
                         .map(HiveUtil::toPartitionValues)
-                        .collect(toImmutableList()).iterator();
+                        .collect(toImmutableList());
+                partitionNames = partitionNameElements.iterator();
             }
             else {
                 // no partitions, so data dir is same as table path
                 partitionNames = Collections.singletonList(Collections.singletonList("")).iterator();
             }
 
-            log.warn(String.format("Finish in %d ms. Partition Names: %s", timer.endTimer(), partitionNames.toString()));
+            log.warn(String.format("Finish in %d ms. Partition Names: %s", timer.endTimer(), fullPartitionNames));
+            log.warn(String.format("Partition Name elements: %s", partitionNameElements));
         }
 
         List<ConnectorSplit> batchHudiSplits = new ArrayList<>();
