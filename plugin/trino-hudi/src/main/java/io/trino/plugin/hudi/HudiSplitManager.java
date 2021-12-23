@@ -14,17 +14,12 @@
 
 package io.trino.plugin.hudi;
 
-import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
-import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.authentication.HiveIdentity;
-import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
-import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
-import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
@@ -34,29 +29,18 @@ import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
-import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import javax.inject.Inject;
 
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
 import java.util.regex.Pattern;
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
-import static io.trino.plugin.hudi.HudiUtil.getPartitionSchema;
 import static java.util.Objects.requireNonNull;
-import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.META_TABLE_LOCATION;
-import static org.apache.hudi.common.table.timeline.TimelineUtils.getPartitionsWritten;
 
 public class HudiSplitManager
         implements ConnectorSplitManager
@@ -96,46 +80,13 @@ public class HudiSplitManager
         Map<String, String> valByRegex = conf.getValByRegex(HOODIE_CONSUME_MODE_PATTERN_STRING.pattern());
         log.debug("Hoodie consume mode: " + valByRegex);
         HoodieTableMetaClient metaClient = hudiTable.getMetaClient().orElseGet(() -> getMetaClient(conf, hudiTable.getBasePath()));
-        List<String> partitionValues = getPartitionsWritten(metaClient.getActiveTimeline());
         log.debug("HudiSplitManager ref: " + this.toString());
         log.debug("Table ref: " + table.toString());
         log.debug("HoodieTableMetaClient ref: " + metaClient.toString());
         log.debug("HoodieTableMetaClient base path: " + metaClient.getBasePath());
-        log.warn("Fetched partitions from Hudi: " + partitionValues);
         hudiTable.getPartitions().ifPresent(p -> p.forEach(p1 -> log.warn("Partitions from TableHandle: " + p1)));
 
-        List<String> columnNames = table.getPartitionColumns().stream()
-                .map(Column::getName)
-                .collect(toImmutableList());
-        log.warn("Column Names: " + columnNames);
-        HudiSplitSource splitSource;
-        Map<String, List<HivePartitionKey>> partitionMap = new HashMap<>();
-        if (!columnNames.isEmpty()) {
-            List<List<String>> partitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
-                    .orElseThrow(() -> new TableNotFoundException(hudiTable.getSchemaTableName()))
-                    .stream()
-                    .map(HiveUtil::toPartitionValues)
-                    .collect(toImmutableList());
-            log.warn("Partition Names: " + partitionNames);
-
-            for (List<String> partitionName : partitionNames) {
-                Optional<Partition> partition1 = metastore.getPartition(identity, table, partitionName);
-                Properties schema1 = getPartitionSchema(table, partition1);
-                String dataDir1 = schema1.getProperty(META_TABLE_LOCATION);
-                log.warn(">>> basePath: %s,  dataDir1: %s", tablePath, dataDir1);
-                String relativePartitionPath = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir1));
-                List<HivePartitionKey> partitionKeys1 = getPartitionKeys(table, partition1);
-                partitionMap.putIfAbsent(relativePartitionPath, partitionKeys1);
-                partitionKeys1.forEach(p -> log.warn(">>> Fetched partitions from HiveUtil: " + p));
-            }
-        }
-        else {
-            // no partitions, so data dir is same as table path
-            partitionMap.put("", ImmutableList.of());
-        }
-
-        log.debug("Partition map: " + partitionMap);
-        splitSource = new HudiSplitSource(session, hudiTable, conf, partitionMap,
+        HudiSplitSource splitSource = new HudiSplitSource(identity, metastore, hudiTable, conf,
                 isHudiMetadataEnabled(session), dynamicFilter);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }

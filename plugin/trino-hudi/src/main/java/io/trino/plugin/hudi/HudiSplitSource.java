@@ -15,36 +15,53 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterators;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HivePartitionKey;
+import io.trino.plugin.hive.authentication.HiveIdentity;
+import io.trino.plugin.hive.metastore.Column;
+import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.plugin.hive.metastore.Partition;
+import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.connector.ConnectorPartitionHandle;
-import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import io.trino.spi.connector.DynamicFilter;
+import io.trino.spi.connector.SchemaTableName;
+import io.trino.spi.connector.TableNotFoundException;
+import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.mapred.FileSplit;
+import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
+import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
+import org.apache.hudi.common.util.HoodieTimer;
+import org.apache.hudi.common.util.collection.ImmutablePair;
+import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
@@ -53,31 +70,39 @@ public class HudiSplitSource
         implements ConnectorSplitSource
 {
     private static final Logger log = Logger.get(HudiSplitSource.class);
+    private final HiveIdentity identity;
+    private final HiveMetastore metastore;
+    private final SchemaTableName tableName;
     private final Configuration conf;
     private final HudiTableHandle tableHandle;
+    private final Table table;
     private final FileSystem fileSystem;
     private final HoodieTableMetaClient metaClient;
     private final Map<String, List<HivePartitionKey>> partitionMap;
     private final boolean metadataEnabled;
-    private final Iterator<String> relativePartitionPaths;
     private final Map<HoodieBaseFile, String> baseFileToPartitionMap;
     private final ArrayDeque<HoodieBaseFile> baseFiles = new ArrayDeque<>();
     private final DynamicFilter dynamicFilter;
+    private final int partitionBatchNum = 100;
     private HoodieTableFileSystemView fileSystemView;
+    private Iterator<List<String>> partitionNames;
 
     public HudiSplitSource(
-            ConnectorSession session,
+            HiveIdentity identity,
+            HiveMetastore metastore,
             HudiTableHandle tableHandle,
             Configuration conf,
-            Map<String, List<HivePartitionKey>> partitionMap,
             boolean metadataEnabled,
             DynamicFilter dynamicFilter)
     {
-        requireNonNull(session, "session is null");
+        this.identity = identity;
+        this.metastore = metastore;
+        this.tableName = tableHandle.getSchemaTableName();
+        this.table = metastore.getTable(identity, tableName.getSchemaName(), tableName.getTableName())
+                .orElseThrow(() -> new TableNotFoundException(tableName));
         this.conf = requireNonNull(conf, "conf is null");
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
-        this.partitionMap = partitionMap;
-        this.relativePartitionPaths = requireNonNull(partitionMap.keySet().iterator(), "relativePartitionPaths is null");
+        this.partitionMap = new HashMap<>();
         this.metadataEnabled = metadataEnabled;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         this.fileSystem = metaClient.getFs();
@@ -108,12 +133,13 @@ public class HudiSplitSource
     @Override
     public boolean isFinished()
     {
-        return !relativePartitionPaths.hasNext() && baseFiles.isEmpty();
+        return !partitionNames.hasNext() && baseFiles.isEmpty();
     }
 
     private List<ConnectorSplit> getSplitsForSnapshotMode(int maxSize) throws IOException
     {
         if (this.fileSystemView == null) {
+            HoodieTimer timer = new HoodieTimer().startTimer();
             // First time calling this
             // Load the timeline and file status only once
             HoodieEngineContext engineContext = new HoodieLocalEngineContext(conf);
@@ -123,6 +149,28 @@ public class HudiSplitSource
             // Scan the file system to load the instants from timeline
             log.debug("Loading file system view for " + metaClient.getBasePath());
             this.fileSystemView = FileSystemViewManager.createInMemoryFileSystemView(engineContext, metaClient, metadataConfig);
+            log.warn(String.format("Finish in %d ms to load table view", timer.endTimer()));
+
+            timer = new HoodieTimer().startTimer();
+            List<String> columnNames = table.getPartitionColumns().stream()
+                    .map(Column::getName)
+                    .collect(toImmutableList());
+            log.warn("Column Names: " + columnNames);
+            HudiSplitSource splitSource;
+            Map<String, List<HivePartitionKey>> partitionMap = new HashMap<>();
+            if (!columnNames.isEmpty()) {
+                partitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
+                        .orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()))
+                        .stream()
+                        .map(HiveUtil::toPartitionValues)
+                        .collect(toImmutableList()).iterator();
+            }
+            else {
+                // no partitions, so data dir is same as table path
+                partitionNames = Collections.singletonList(Collections.singletonList("")).iterator();
+            }
+
+            log.warn(String.format("Finish in %d ms. Partition Names: %s", timer.endTimer(), partitionNames.toString()));
         }
 
         List<ConnectorSplit> batchHudiSplits = new ArrayList<>();
@@ -130,47 +178,100 @@ public class HudiSplitSource
 
         log.debug("Target number of splits: " + maxSize);
 
-        while (remaining > 0 && !isFinished()) {
+        // Only process one batch now
+        if (remaining > 0 && !isFinished()) {
             if (baseFiles.isEmpty()) {
-                if (relativePartitionPaths.hasNext()) {
-                    String relativePartitionPath = relativePartitionPaths.next();
-                    List<HoodieBaseFile> baseFilesToAdd = fileSystemView.getLatestBaseFiles(relativePartitionPath)
-                            .collect(Collectors.toList());
-                    baseFilesToAdd.forEach(baseFile -> baseFileToPartitionMap.put(baseFile, relativePartitionPath));
-                    // TODO: skip partitions that are filtered out based on the predicate
-                    baseFiles.addAll(baseFilesToAdd);
-                }
+                HoodieTimer timer1 = new HoodieTimer().startTimer();
+
+                List<List<String>> batchPartitionNames = new ArrayList<>();
+                Iterators.limit(partitionNames, partitionBatchNum).forEachRemaining(batchPartitionNames::add);
+
+                Map<String, List<HivePartitionKey>> batchKeyMap =
+                        batchPartitionNames.stream().parallel()
+                                .map(partitionNames -> getPartitionPathToKey(
+                                        identity, metastore, table, table.getStorage().getLocation(), partitionNames))
+                                .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                partitionMap.putAll(batchKeyMap);
+
+                log.warn(String.format("Finish in %d ms to get partition keys", timer1.endTimer()));
+
+                timer1 = new HoodieTimer().startTimer();
+                List<Pair<HoodieBaseFile, String>> baseFilesToAdd = batchKeyMap.keySet().stream().parallel()
+                        .flatMap(relativePartitionPath -> fileSystemView.getLatestBaseFiles(relativePartitionPath)
+                                .map(baseFile -> new ImmutablePair<>(baseFile, relativePartitionPath))
+                                .collect(Collectors.toList()).stream())
+                        .collect(Collectors.toList());
+
+                baseFilesToAdd.forEach(e -> baseFileToPartitionMap.put(e.getKey(), e.getValue()));
+                // TODO: skip partitions that are filtered out based on the predicate
+                baseFiles.addAll(baseFilesToAdd.stream().map(Pair::getKey).collect(Collectors.toList()));
+                log.warn(String.format("Finish in %d ms to get base files", timer1.endTimer()));
             }
 
+            HoodieTimer timer = new HoodieTimer().startTimer();
+            List<HoodieBaseFile> batchBaseFiles = new ArrayList<>();
             while (remaining > 0 && !baseFiles.isEmpty()) {
                 HoodieBaseFile baseFile = baseFiles.pollFirst();
-                log.debug(String.format("Remaining: %d base file: %s", remaining, baseFile.getPath()));
-
-                List<FileSplit> fileSplits = HudiUtil.getSplits(
-                        fileSystem, HoodieInputFormatUtils.getFileStatus(baseFile));
-                fileSplits.forEach(fileSplit -> {
-                    try {
-                        log.debug(String.format(">>>> File split: %s start=%d len=%d",
-                                fileSplit.getPath(), fileSplit.getStart(), fileSplit.getLength()));
-                        batchHudiSplits.add(new HudiSplit(
-                                fileSplit.getPath().toString(),
-                                fileSplit.getStart(),
-                                fileSplit.getLength(),
-                                metaClient.getFs().getLength(fileSplit.getPath()),
-                                ImmutableList.of(),
-                                tableHandle.getPredicate(),
-                                partitionMap.get(baseFileToPartitionMap.get(baseFile))));
-                    }
-                    catch (IOException e) {
-                        throw new HoodieIOException("Unable to add splits for " + fileSplit.getPath().toString(), e);
-                    }
-                });
-                remaining -= fileSplits.size();
+                batchBaseFiles.add(baseFile);
+                remaining--;
             }
+
+            List<HudiSplit> hudiSplitsToAdd = batchBaseFiles.stream().parallel()
+                    .flatMap(baseFile -> {
+                        List<HudiSplit> hudiSplits = new ArrayList<>();
+                        try {
+                            hudiSplits = HudiUtil.getSplits(
+                                    fileSystem, HoodieInputFormatUtils.getFileStatus(baseFile))
+                                    .stream()
+                                    .flatMap(fileSplit -> {
+                                        List<HudiSplit> result = new ArrayList<>();
+                                        try {
+                                            result.add(new HudiSplit(
+                                                    fileSplit.getPath().toString(),
+                                                    fileSplit.getStart(),
+                                                    fileSplit.getLength(),
+                                                    metaClient.getFs().getLength(fileSplit.getPath()),
+                                                    ImmutableList.of(),
+                                                    tableHandle.getPredicate(),
+                                                    partitionMap.get(baseFileToPartitionMap.get(baseFile))));
+                                        }
+                                        catch (IOException e) {
+                                            throw new HoodieIOException(String.format(
+                                                    "Unable to get Hudi split for %s, start=%d len=%d",
+                                                    baseFile.getPath(), fileSplit.getStart(), fileSplit.getLength()), e);
+                                        }
+                                        return result.stream();
+                                    })
+                                    .collect(Collectors.toList());
+                        }
+                        catch (IOException e) {
+                            throw new HoodieIOException("Unable to get splits for " + baseFile.getPath(), e);
+                        }
+                        return hudiSplits.stream();
+                    })
+                    .collect(Collectors.toList());
+            batchHudiSplits.addAll(hudiSplitsToAdd);
+            log.warn(String.format("Finish in %d ms to get splits", timer.endTimer()));
         }
 
         log.info("Number of Hudi splits generated in the batch: " + batchHudiSplits.size());
 
         return batchHudiSplits;
+    }
+
+    private Pair<String, List<HivePartitionKey>> getPartitionPathToKey(
+            HiveIdentity identity,
+            HiveMetastore metastore,
+            Table table,
+            String tablePath,
+            List<String> partitionName)
+    {
+        Optional<Partition> partition1 = metastore.getPartition(identity, table, partitionName);
+        String dataDir1 = partition1.isPresent()
+                ? partition1.get().getStorage().getLocation()
+                : tablePath;
+        log.warn(">>> basePath: %s,  dataDir1: %s", tablePath, dataDir1);
+        String relativePartitionPath = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir1));
+        return new ImmutablePair<>(relativePartitionPath, getPartitionKeys(table, partition1));
     }
 }
