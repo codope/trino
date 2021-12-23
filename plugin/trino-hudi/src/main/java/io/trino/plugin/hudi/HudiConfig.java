@@ -27,7 +27,7 @@ public class HudiConfig
 {
     private HoodieFileFormat fileFormat = PARQUET;
     private boolean metadataEnabled;
-    private boolean splitInSource;
+    private boolean shouldSkipMetaStoreForPartition = true;
     private DataSize maxSplitSize = DataSize.ofBytes(128 * 1024 * 1024);
 
     @NotNull
@@ -70,17 +70,17 @@ public class HudiConfig
         return this.maxSplitSize;
     }
 
-    @Config("hudi.split_in_source")
-    @ConfigDescription("Whether to split files in the HudiSplitSource.  If false, done in HudiSplitManager.")
-    public HudiConfig setSplitInSource(boolean splitInSource)
+    @Config("hudi.skip_metastore_for_partition")
+    @ConfigDescription("Whether to skip metastore for partition")
+    public HudiConfig setSkipMetaStoreForPartition(boolean shouldSkipMetaStoreForPartition)
     {
-        this.splitInSource = splitInSource;
+        this.shouldSkipMetaStoreForPartition = shouldSkipMetaStoreForPartition;
         return this;
     }
 
     @NotNull
-    public boolean isSplitInSource()
+    public boolean getSkipMetaStoreForPartition()
     {
-        return this.splitInSource;
+        return this.shouldSkipMetaStoreForPartition;
     }
 }

@@ -20,6 +20,7 @@ import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
@@ -29,6 +30,7 @@ import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
+import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
@@ -39,6 +41,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
+import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static java.util.Objects.requireNonNull;
 
@@ -86,8 +89,11 @@ public class HudiSplitManager
         log.debug("HoodieTableMetaClient base path: " + metaClient.getBasePath());
         hudiTable.getPartitions().ifPresent(p -> p.forEach(p1 -> log.warn("Partitions from TableHandle: " + p1)));
 
+        TupleDomain<ColumnHandle> effectivePredicate = constraint.getSummary();
+        log.debug("effectivePredicate: " + effectivePredicate);
+
         HudiSplitSource splitSource = new HudiSplitSource(identity, metastore, hudiTable, conf,
-                isHudiMetadataEnabled(session), dynamicFilter);
+                isHudiMetadataEnabled(session), shouldSkipMetaStoreForPartition(session), dynamicFilter);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 
