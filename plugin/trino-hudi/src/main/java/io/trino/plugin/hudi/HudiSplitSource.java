@@ -15,7 +15,6 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterators;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.authentication.HiveIdentity;
@@ -191,7 +190,11 @@ public class HudiSplitSource
                 HoodieTimer timer1 = new HoodieTimer().startTimer();
 
                 List<List<String>> batchPartitionNames = new ArrayList<>();
-                Iterators.limit(partitionNames, partitionBatchNum).forEachRemaining(batchPartitionNames::add);
+                int count = partitionBatchNum;
+                while (count > 0 && partitionNames.hasNext()) {
+                    batchPartitionNames.add(partitionNames.next());
+                    count--;
+                }
 
                 Map<String, List<HivePartitionKey>> batchKeyMap =
                         batchPartitionNames.stream().parallel()
