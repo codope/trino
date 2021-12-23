@@ -80,11 +80,13 @@ public class HudiSplitSource
     private final HoodieTableMetaClient metaClient;
     private final Map<String, List<HivePartitionKey>> partitionMap;
     private final boolean metadataEnabled;
+    private final boolean shouldSkipMetaStoreForPartition;
     private final Map<HoodieBaseFile, String> baseFileToPartitionMap;
     private final ArrayDeque<HoodieBaseFile> baseFiles = new ArrayDeque<>();
     private final DynamicFilter dynamicFilter;
-    private final int partitionBatchNum = 100;
+    private final int partitionBatchNum = 32;
     private HoodieTableFileSystemView fileSystemView;
+    private List<String> partitionColumnNames;
     private Iterator<List<String>> partitionNames;
 
     public HudiSplitSource(
@@ -93,6 +95,7 @@ public class HudiSplitSource
             HudiTableHandle tableHandle,
             Configuration conf,
             boolean metadataEnabled,
+            boolean shouldSkipMetaStoreForPartition,
             DynamicFilter dynamicFilter)
     {
         this.identity = identity;
@@ -104,6 +107,7 @@ public class HudiSplitSource
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
         this.partitionMap = new HashMap<>();
         this.metadataEnabled = metadataEnabled;
+        this.shouldSkipMetaStoreForPartition = shouldSkipMetaStoreForPartition;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         this.fileSystem = metaClient.getFs();
         this.baseFileToPartitionMap = new HashMap<>();
@@ -152,16 +156,14 @@ public class HudiSplitSource
             log.warn(String.format("Finish in %d ms to load table view", timer.endTimer()));
 
             timer = new HoodieTimer().startTimer();
-            List<String> columnNames = table.getPartitionColumns().stream()
+            partitionColumnNames = table.getPartitionColumns().stream()
                     .map(Column::getName)
                     .collect(toImmutableList());
-            log.warn("Column Names: " + columnNames);
-            HudiSplitSource splitSource;
-            Map<String, List<HivePartitionKey>> partitionMap = new HashMap<>();
+            log.warn("Column Names: " + partitionColumnNames);
             List<String> fullPartitionNames = new ArrayList<>();
             List<List<String>> partitionNameElements = new ArrayList<>();
-            if (!columnNames.isEmpty()) {
-                fullPartitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), columnNames, TupleDomain.all())
+            if (!partitionColumnNames.isEmpty()) {
+                fullPartitionNames = metastore.getPartitionNamesByFilter(identity, tableName.getSchemaName(), tableName.getTableName(), partitionColumnNames, TupleDomain.all())
                         .orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()));
                 partitionNameElements = fullPartitionNames
                         .stream()
@@ -184,7 +186,7 @@ public class HudiSplitSource
         log.debug("Target number of splits: " + maxSize);
 
         // Only process one batch now
-        if (remaining > 0 && !isFinished()) {
+        while (remaining > 0 && !isFinished()) {
             if (baseFiles.isEmpty()) {
                 HoodieTimer timer1 = new HoodieTimer().startTimer();
 
@@ -194,11 +196,11 @@ public class HudiSplitSource
                 Map<String, List<HivePartitionKey>> batchKeyMap =
                         batchPartitionNames.stream().parallel()
                                 .map(partitionNames -> getPartitionPathToKey(
-                                        identity, metastore, table, table.getStorage().getLocation(), partitionNames))
+                                        identity, metastore, table, table.getStorage().getLocation(), partitionColumnNames, partitionNames))
                                 .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
                 partitionMap.putAll(batchKeyMap);
 
-                log.warn(String.format("Finish in %d ms to get partition keys", timer1.endTimer()));
+                log.warn(String.format("Finish in %d ms to get partition keys: %s", timer1.endTimer(), batchKeyMap.toString()));
 
                 timer1 = new HoodieTimer().startTimer();
                 List<Pair<HoodieBaseFile, String>> baseFilesToAdd = batchKeyMap.keySet().stream().parallel()
@@ -215,10 +217,9 @@ public class HudiSplitSource
 
             HoodieTimer timer = new HoodieTimer().startTimer();
             List<HoodieBaseFile> batchBaseFiles = new ArrayList<>();
-            while (remaining > 0 && !baseFiles.isEmpty()) {
+            while (!baseFiles.isEmpty()) {
                 HoodieBaseFile baseFile = baseFiles.pollFirst();
                 batchBaseFiles.add(baseFile);
-                remaining--;
             }
 
             List<HudiSplit> hudiSplitsToAdd = batchBaseFiles.stream().parallel()
@@ -256,7 +257,11 @@ public class HudiSplitSource
                     })
                     .collect(Collectors.toList());
             batchHudiSplits.addAll(hudiSplitsToAdd);
-            log.warn(String.format("Finish in %d ms to get splits", timer.endTimer()));
+            remaining -= hudiSplitsToAdd.size();
+            log.warn(String.format("Finish in %d ms to get batch splits", timer.endTimer()));
+            if (remaining < hudiSplitsToAdd.size()) {
+                break;
+            }
         }
 
         log.info("Number of Hudi splits generated in the batch: " + batchHudiSplits.size());
@@ -269,14 +274,49 @@ public class HudiSplitSource
             HiveMetastore metastore,
             Table table,
             String tablePath,
+            List<String> columnNames,
             List<String> partitionName)
     {
-        Optional<Partition> partition1 = metastore.getPartition(identity, table, partitionName);
-        String dataDir1 = partition1.isPresent()
-                ? partition1.get().getStorage().getLocation()
-                : tablePath;
-        log.warn(">>> basePath: %s,  dataDir1: %s", tablePath, dataDir1);
-        String relativePartitionPath = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir1));
-        return new ImmutablePair<>(relativePartitionPath, getPartitionKeys(table, partition1));
+        Optional<Partition> partition1 = Optional.empty();
+        String relativePartitionPath = "";
+        List<HivePartitionKey> partitionKeys = new ArrayList<>();
+        if (!columnNames.isEmpty()) {
+            if (shouldSkipMetaStoreForPartition) {
+                StringBuilder partitionPathBuilder = new StringBuilder();
+                for (int i = 0; i < columnNames.size(); i++) {
+                    if (partitionPathBuilder.length() > 0) {
+                        partitionPathBuilder.append("/");
+                    }
+                    String columnName = columnNames.get(i);
+                    String value = partitionName.get(i);
+                    partitionKeys.add(new HivePartitionKey(columnName, value));
+                    partitionPathBuilder.append(columnName);
+                    partitionPathBuilder.append("=");
+                    partitionPathBuilder.append(value);
+                }
+                if (columnNames.size() == 1) {
+                    String value = partitionName.get(0);
+                    if (value.contains("-")) {
+                        relativePartitionPath = value.replace("-", "/");
+                    }
+                    else {
+                        relativePartitionPath = partitionPathBuilder.toString();
+                    }
+                }
+                else {
+                    relativePartitionPath = partitionPathBuilder.toString();
+                }
+            }
+            else {
+                partition1 = metastore.getPartition(identity, table, partitionName);
+                String dataDir1 = partition1.isPresent()
+                        ? partition1.get().getStorage().getLocation()
+                        : tablePath;
+                log.warn(">>> basePath: %s,  dataDir1: %s", tablePath, dataDir1);
+                relativePartitionPath = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir1));
+                partitionKeys = getPartitionKeys(table, partition1);
+            }
+        }
+        return new ImmutablePair<>(relativePartitionPath, partitionKeys);
     }
 }
