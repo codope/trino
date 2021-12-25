@@ -57,6 +57,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -84,6 +88,12 @@ public class HudiSplitSource
     private final ArrayDeque<HoodieBaseFile> baseFiles = new ArrayDeque<>();
     private final DynamicFilter dynamicFilter;
     private final int partitionBatchNum = 32;
+
+    private final ArrayDeque<ConnectorSplit> connectorSplitBuffer;
+    private final HudiSplitBackgroundLoader splitLoader;
+    private final ScheduledExecutorService splitLoaderExecutorService;
+    private final ScheduledFuture splitLoaderFuture;
+
     private HoodieTableFileSystemView fileSystemView;
     private List<String> partitionColumnNames;
     private Iterator<List<String>> partitionNames;
@@ -111,11 +121,41 @@ public class HudiSplitSource
         this.fileSystem = metaClient.getFs();
         this.baseFileToPartitionMap = new HashMap<>();
         this.dynamicFilter = dynamicFilter;
+        this.connectorSplitBuffer = new ArrayDeque<>();
+        this.splitLoader = new HudiSplitBackgroundLoader(
+                conf, tableHandle, metaClient, metadataEnabled, table, identity, metastore, connectorSplitBuffer);
+        this.splitLoaderExecutorService = Executors.newSingleThreadScheduledExecutor();
+        this.splitLoaderFuture = this.splitLoaderExecutorService.schedule(this.splitLoader, 0, TimeUnit.MILLISECONDS);
     }
 
     @Override
     public CompletableFuture<ConnectorSplitBatch> getNextBatch(ConnectorPartitionHandle partitionHandle, int maxSize)
     {
+        if (isFinished()) {
+            return completedFuture(new ConnectorSplitBatch(new ArrayList<>(), isFinished()));
+        }
+
+        HoodieTimer timer = new HoodieTimer().startTimer();
+        while (connectorSplitBuffer.isEmpty()) {
+            try {
+                Thread.sleep(2);
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        List<ConnectorSplit> connectorSplits = new ArrayList<>();
+        synchronized (connectorSplitBuffer) {
+            int count = maxSize;
+            while (count > 0 && !connectorSplitBuffer.isEmpty()) {
+                connectorSplits.add(connectorSplitBuffer.pollFirst());
+                count--;
+            }
+        }
+        log.warn(String.format("Get the next batch of %d splits in %d ms", connectorSplits.size(), timer.endTimer()));
+        return completedFuture(new ConnectorSplitBatch(connectorSplits, isFinished()));
+        /*
         log.debug("Dynamic filter: " + dynamicFilter.getColumnsCovered());
         log.debug("Getting next batch with partitionKeys: " + partitionMap.keySet());
         try {
@@ -125,18 +165,20 @@ public class HudiSplitSource
         catch (IOException e) {
             throw new HoodieIOException("Failed to get next batch of splits", e);
         }
+        */
     }
 
     @Override
     public void close()
     {
-        fileSystemView.close();
+        //fileSystemView.close();
     }
 
     @Override
     public boolean isFinished()
     {
-        return !partitionNames.hasNext() && baseFiles.isEmpty();
+        //return !partitionNames.hasNext() && baseFiles.isEmpty();
+        return splitLoaderFuture.isDone() && connectorSplitBuffer.isEmpty();
     }
 
     private List<ConnectorSplit> getSplitsForSnapshotMode(int maxSize) throws IOException
