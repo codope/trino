@@ -30,10 +30,26 @@ public class TestHudiSanity
     }
 
     @Test
-    public void readPartitionedTable()
+    public void readPartitionedCowTable()
     {
-        String testQuery = format("SELECT symbol, max(ts) FROM \"%s\" group by symbol HAVING symbol = 'GOOG'", PARTITIONED_TABLE_NAME);
+        String testQuery = format("SELECT symbol, max(ts) FROM \"%s\" group by symbol HAVING symbol = 'GOOG'", PARTITIONED_COW_TABLE_NAME);
         String expResults = "SELECT * FROM VALUES('GOOG', '2018-08-31 10:59:00')";
-        assertHudiQuery(PARTITIONED_TABLE_NAME, testQuery, expResults, false);
+        assertHudiQuery(PARTITIONED_COW_TABLE_NAME, testQuery, expResults, false);
+    }
+
+    @Test
+    public void readPartitionedMorTable()
+    {
+        String testQuery = format("SELECT symbol, max(ts) FROM \"%s\" group by symbol HAVING symbol = 'GOOG'", PARTITIONED_MOR_TABLE_NAME);
+        String expResults = "SELECT * FROM VALUES('GOOG', '2018-08-31 10:59:00')";
+        assertHudiQuery(PARTITIONED_MOR_TABLE_NAME, testQuery, expResults, false);
+    }
+
+    @Test
+    public void readPartitionedColumn()
+    {
+        String testQuery = format("SELECT dt, count(1) FROM \"%s\" group by dt", PARTITIONED_COW_TABLE_NAME);
+        String expResults = "SELECT * FROM VALUES('2018/08/31', '99')";
+        assertHudiQuery(PARTITIONED_COW_TABLE_NAME, testQuery, expResults, false);
     }
 }

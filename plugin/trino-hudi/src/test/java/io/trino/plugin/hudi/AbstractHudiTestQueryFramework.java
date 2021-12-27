@@ -38,7 +38,8 @@ public class AbstractHudiTestQueryFramework
     public static final String HUDI_SCHEMA = "default";
 
     static final String NON_PARTITIONED_TABLE_NAME = "hudi_non_part_cow";
-    static final String PARTITIONED_TABLE_NAME = "stock_ticks_cow";
+    static final String PARTITIONED_COW_TABLE_NAME = "stock_ticks_cow";
+    static final String PARTITIONED_MOR_TABLE_NAME = "stock_ticks_mor";
 
     private static final String CREATE_NON_PARTITIONED_TABLE_STATEMENT = "CREATE TABLE %s.\"%s\".\"%s\" (\n" +
             "    _hoodie_commit_time varchar,\n" +
@@ -88,7 +89,8 @@ public class AbstractHudiTestQueryFramework
 
     private static final Map<String, String> TABLE_NAME_TO_CREATE_STATEMENT = new ImmutableMap.Builder<String, String>()
             .put(NON_PARTITIONED_TABLE_NAME, CREATE_NON_PARTITIONED_TABLE_STATEMENT)
-            .put(PARTITIONED_TABLE_NAME, CREATE_PARTITIONED_TABLE_STATEMENT)
+            .put(PARTITIONED_COW_TABLE_NAME, CREATE_PARTITIONED_TABLE_STATEMENT)
+            .put(PARTITIONED_MOR_TABLE_NAME, CREATE_PARTITIONED_TABLE_STATEMENT)
             .build();
 
     @Override

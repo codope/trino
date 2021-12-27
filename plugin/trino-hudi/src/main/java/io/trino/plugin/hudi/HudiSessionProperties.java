@@ -35,7 +35,7 @@ public class HudiSessionProperties
     private static final String FILE_FORMAT = "file_format";
     private static final String METADATA_ENABLED = "metadata_enabled";
     private static final String MAX_SPLIT_SIZE = "max_split_size";
-    private static final String SPLIT_IN_SOURCE = "split_in_source";
+    private static final String SKIP_METASTORE_FOR_PARTITION = "skip_metastore_for_partition";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -55,9 +55,9 @@ public class HudiSessionProperties
                         hudiConfig.isMetadataEnabled(),
                         false),
                 booleanProperty(
-                        SPLIT_IN_SOURCE,
-                        "Whether to split files in the HudiSplitSource.  If false, done in HudiSplitManager.",
-                        hudiConfig.isSplitInSource(),
+                        SKIP_METASTORE_FOR_PARTITION,
+                        "Whether to skip metastore for partition.",
+                        hudiConfig.getSkipMetaStoreForPartition(),
                         false),
                 dataSizeProperty(
                         MAX_SPLIT_SIZE,
@@ -87,8 +87,8 @@ public class HudiSessionProperties
         return session.getProperty(MAX_SPLIT_SIZE, DataSize.class);
     }
 
-    public static boolean isSplitInSource(ConnectorSession session)
+    public static boolean shouldSkipMetaStoreForPartition(ConnectorSession session)
     {
-        return session.getProperty(SPLIT_IN_SOURCE, Boolean.class);
+        return session.getProperty(SKIP_METASTORE_FOR_PARTITION, Boolean.class);
     }
 }
