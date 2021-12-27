@@ -122,8 +122,13 @@ public class HudiSplitSource
         this.baseFileToPartitionMap = new HashMap<>();
         this.dynamicFilter = dynamicFilter;
         this.connectorSplitBuffer = new ArrayDeque<>();
+        int partitionNumThreads = 16; // Math.max(1, ForkJoinPool.getCommonPoolParallelism() / 2);
+        int splitNumThreads = 16; // Math.max(1, ForkJoinPool.getCommonPoolParallelism() / 4);
+        log.warn(String.format("Parallelism: %d for HudiPartitionKeyReader, %d for HudiPartitionSplitGenerator",
+                partitionNumThreads, splitNumThreads));
         this.splitLoader = new HudiSplitBackgroundLoader(
-                conf, tableHandle, metaClient, metadataEnabled, table, identity, metastore, connectorSplitBuffer);
+                conf, tableHandle, metaClient, metadataEnabled, table, identity, metastore, connectorSplitBuffer,
+                partitionNumThreads, splitNumThreads);
         this.splitLoaderExecutorService = Executors.newSingleThreadScheduledExecutor();
         this.splitLoaderFuture = this.splitLoaderExecutorService.schedule(this.splitLoader, 0, TimeUnit.MILLISECONDS);
     }

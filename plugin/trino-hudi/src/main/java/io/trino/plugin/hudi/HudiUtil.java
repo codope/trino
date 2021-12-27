@@ -17,6 +17,9 @@ package io.trino.plugin.hudi;
 import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HiveColumnHandle;
+import io.trino.plugin.hive.HivePartitionKey;
+import io.trino.plugin.hive.authentication.HiveIdentity;
+import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.spi.TrinoException;
@@ -35,7 +38,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hadoop.net.NetworkTopology;
+import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.common.util.collection.ImmutablePair;
+import org.apache.hudi.common.util.collection.Pair;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
 
@@ -55,6 +61,7 @@ import java.util.Properties;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.slice.Slices.utf8Slice;
 import static io.trino.plugin.hive.metastore.MetastoreUtil.getHiveSchema;
+import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_PARTITION_VALUE;
 import static java.lang.Double.parseDouble;
 import static java.lang.Float.floatToRawIntBits;
@@ -64,6 +71,8 @@ import static java.lang.String.format;
 
 public class HudiUtil
 {
+    private static final Logger LOG = Logger.get(HudiUtil.class);
+
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
 
     private static final Logger log = Logger.get(HudiUtil.class);
@@ -155,6 +164,28 @@ public class HudiUtil
                     format("Can not parse partition value '%s' of type '%s' for partition column '%s'",
                             partitionValue, partitionDataType, partitionColumnName));
         }
+    }
+
+    public static Pair<String, List<HivePartitionKey>> getPartitionPathToKey(
+            HiveIdentity identity,
+            HiveMetastore metastore,
+            Table table,
+            String tablePath,
+            List<String> columnNames,
+            List<String> partitionName)
+    {
+        String relativePartitionPath = "";
+        List<HivePartitionKey> partitionKeys = new ArrayList<>();
+        if (!columnNames.isEmpty()) {
+            Optional<Partition> partition1 = metastore.getPartition(identity, table, partitionName);
+            String dataDir1 = partition1.isPresent()
+                    ? partition1.get().getStorage().getLocation()
+                    : tablePath;
+            LOG.warn(">>> basePath: %s,  dataDir1: %s", tablePath, dataDir1);
+            relativePartitionPath = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir1));
+            partitionKeys = getPartitionKeys(table, partition1);
+        }
+        return new ImmutablePair<>(relativePartitionPath, partitionKeys);
     }
 
     public static List<FileSplit> getSplits(FileSystem fs, FileStatus fileStatus) throws IOException

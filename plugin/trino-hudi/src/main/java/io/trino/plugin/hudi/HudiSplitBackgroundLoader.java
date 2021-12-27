@@ -14,13 +14,11 @@
 
 package io.trino.plugin.hudi;
 
-import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
-import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.connector.ConnectorSplit;
@@ -29,22 +27,16 @@ import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
-import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import org.apache.hudi.common.util.HoodieTimer;
-import org.apache.hudi.common.util.collection.ImmutablePair;
 import org.apache.hudi.common.util.collection.Pair;
-import org.apache.hudi.exception.HoodieIOException;
-import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 
-import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -52,12 +44,12 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
-import static io.trino.plugin.hive.util.HiveUtil.getPartitionKeys;
 import static java.util.Objects.requireNonNull;
 
 public class HudiSplitBackgroundLoader
@@ -72,6 +64,14 @@ public class HudiSplitBackgroundLoader
     private final HiveIdentity identity;
     private final HiveMetastore metastore;
     private final ArrayDeque<ConnectorSplit> connectorSplitBuffer;
+    // Pair of relative partition path and Hive partition keys
+    private final ArrayDeque<List<String>> partitionNamesBuffer;
+    private final Map<String, List<HivePartitionKey>> partitionToKeysMap;
+    private final ArrayDeque<Pair<HoodieBaseFile, String>> hoodieFilesBuffer;
+    private final ExecutorService partitionKeyReaderExecutorService;
+    private final ExecutorService splitGeneratorExecutorService;
+    private final int partitionNumThreads;
+    private final int splitNumThreads;
     private int initialBatchSize = 2;
     private int maxBatchSize = 16;
     private int batchSize = -1;
@@ -84,7 +84,9 @@ public class HudiSplitBackgroundLoader
             Table table,
             HiveIdentity identity,
             HiveMetastore metastore,
-            ArrayDeque<ConnectorSplit> connectorSplitBuffer)
+            ArrayDeque<ConnectorSplit> connectorSplitBuffer,
+            int partitionNumThreads,
+            int splitNumThreads)
     {
         this.conf = requireNonNull(conf, "conf is null");
         this.tableHandle = tableHandle;
@@ -94,6 +96,13 @@ public class HudiSplitBackgroundLoader
         this.identity = identity;
         this.metastore = metastore;
         this.connectorSplitBuffer = connectorSplitBuffer;
+        this.partitionNamesBuffer = new ArrayDeque<>();
+        this.partitionToKeysMap = new HashMap<>();
+        this.hoodieFilesBuffer = new ArrayDeque<>();
+        this.partitionNumThreads = partitionNumThreads;
+        this.splitNumThreads = splitNumThreads;
+        this.partitionKeyReaderExecutorService = Executors.newFixedThreadPool(partitionNumThreads);
+        this.splitGeneratorExecutorService = Executors.newFixedThreadPool(splitNumThreads);
     }
 
     @Override
@@ -135,6 +144,7 @@ public class HudiSplitBackgroundLoader
         }
 
         partitionNames = partitionNamesList.iterator();
+        partitionNamesBuffer.addAll(partitionNamesList);
 
         LOG.warn(String.format("Finish in %d ms. Partition Names: %s", timer.endTimer(), fullPartitionNames));
         LOG.warn(String.format("Partition Name elements: %s", partitionNamesList));
@@ -142,8 +152,56 @@ public class HudiSplitBackgroundLoader
         Map<String, List<HivePartitionKey>> partitionMap = new HashMap<>();
         FileSystem fileSystem = metaClient.getFs();
 
-        long currTime = System.currentTimeMillis();
+        List<Future> partitionKeyReaderFutures = new ArrayList<>();
 
+        for (int i = 0; i < partitionNumThreads; i++) {
+            partitionKeyReaderFutures.add(
+                    partitionKeyReaderExecutorService.submit(
+                            new HudiPartitionKeyReader(table, identity, metastore, fileSystemView,
+                                    partitionNamesBuffer, partitionToKeysMap, hoodieFilesBuffer)));
+        }
+
+        List<HudiPartitionSplitGenerator> splitGeneratorList = new ArrayList<>();
+        List<Future> splitGeneratorFutures = new ArrayList<>();
+
+        for (int i = 0; i < splitNumThreads; i++) {
+            HudiPartitionSplitGenerator generator = new HudiPartitionSplitGenerator(fileSystem, metaClient, tableHandle, partitionToKeysMap,
+                    hoodieFilesBuffer, connectorSplitBuffer);
+            splitGeneratorList.add(generator);
+            splitGeneratorFutures.add(splitGeneratorExecutorService.submit(generator));
+        }
+
+        for (Future future : partitionKeyReaderFutures) {
+            try {
+                future.get();
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            catch (ExecutionException e) {
+                e.printStackTrace();
+            }
+        }
+
+        for (HudiPartitionSplitGenerator generator : splitGeneratorList) {
+            generator.stopRunning();
+        }
+
+        for (Future future : splitGeneratorFutures) {
+            try {
+                future.get();
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            catch (ExecutionException e) {
+                e.printStackTrace();
+            }
+        }
+
+        // Each partition sequential processing
+        /*
+        long currTime = System.currentTimeMillis();
         partitionNamesList.stream().parallel()
                 .map(names -> {
                     Pair<String, List<HivePartitionKey>> partitionPathToKey = getPartitionPathToKey(
@@ -193,7 +251,8 @@ public class HudiSplitBackgroundLoader
                     return true;
                 })
                 .collect(Collectors.toList());
-
+        */
+        // Mini-batches
         /*
         while (partitionNames.hasNext()) {
             timer = new HoodieTimer().startTimer();
@@ -287,27 +346,5 @@ public class HudiSplitBackgroundLoader
             }
         }
         return batchSize;
-    }
-
-    private Pair<String, List<HivePartitionKey>> getPartitionPathToKey(
-            HiveIdentity identity,
-            HiveMetastore metastore,
-            Table table,
-            String tablePath,
-            List<String> columnNames,
-            List<String> partitionName)
-    {
-        String relativePartitionPath = "";
-        List<HivePartitionKey> partitionKeys = new ArrayList<>();
-        if (!columnNames.isEmpty()) {
-            Optional<Partition> partition1 = metastore.getPartition(identity, table, partitionName);
-            String dataDir1 = partition1.isPresent()
-                    ? partition1.get().getStorage().getLocation()
-                    : tablePath;
-            LOG.warn(">>> basePath: %s,  dataDir1: %s", tablePath, dataDir1);
-            relativePartitionPath = FSUtils.getRelativePartitionPath(new Path(tablePath), new Path(dataDir1));
-            partitionKeys = getPartitionKeys(table, partition1);
-        }
-        return new ImmutablePair<>(relativePartitionPath, partitionKeys);
     }
 }
