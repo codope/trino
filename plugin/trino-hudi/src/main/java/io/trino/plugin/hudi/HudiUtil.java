@@ -15,16 +15,14 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
-import io.airlift.log.Logger;
 import io.trino.plugin.hive.HiveColumnHandle;
-import io.trino.plugin.hive.metastore.Partition;
-import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.hive.HivePartitionKey;
+import io.trino.plugin.hive.metastore.Column;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Decimals;
-import io.trino.spi.type.StandardTypes;
 import io.trino.spi.type.TypeSignature;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
@@ -50,23 +48,33 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.slice.Slices.utf8Slice;
-import static io.trino.plugin.hive.metastore.MetastoreUtil.getHiveSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_PARTITION_VALUE;
+import static io.trino.spi.type.StandardTypes.BIGINT;
+import static io.trino.spi.type.StandardTypes.BOOLEAN;
+import static io.trino.spi.type.StandardTypes.DATE;
+import static io.trino.spi.type.StandardTypes.DECIMAL;
+import static io.trino.spi.type.StandardTypes.DOUBLE;
+import static io.trino.spi.type.StandardTypes.INTEGER;
+import static io.trino.spi.type.StandardTypes.REAL;
+import static io.trino.spi.type.StandardTypes.SMALLINT;
+import static io.trino.spi.type.StandardTypes.TIMESTAMP;
+import static io.trino.spi.type.StandardTypes.TINYINT;
+import static io.trino.spi.type.StandardTypes.VARBINARY;
+import static io.trino.spi.type.StandardTypes.VARCHAR;
 import static java.lang.Double.parseDouble;
 import static java.lang.Float.floatToRawIntBits;
 import static java.lang.Float.parseFloat;
 import static java.lang.Long.parseLong;
 import static java.lang.String.format;
+import static java.util.Objects.isNull;
+import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
 
 public class HudiUtil
 {
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
-
-    private static final Logger log = Logger.get(HudiUtil.class);
 
     private HudiUtil() {}
 
@@ -78,14 +86,6 @@ public class HudiUtil
     public static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)
     {
         return inputFormat instanceof HoodieParquetInputFormat;
-    }
-
-    public static Properties getPartitionSchema(Table table, Optional<Partition> partition)
-    {
-        if (partition.isEmpty()) {
-            return getHiveSchema(table);
-        }
-        return getHiveSchema(partition.get(), table);
     }
 
     public static List<TupleDomain<ColumnHandle>> splitPredicate(
@@ -110,41 +110,39 @@ public class HudiUtil
                 TupleDomain.withColumnDomains(regularColumnPredicates));
     }
 
-    public static Object convertPartitionValue(
+    public static Optional<Object> convertPartitionValue(
             String partitionColumnName,
             String partitionValue,
             TypeSignature partitionDataType)
     {
-        log.warn(">>> convertPartitionValue column: %s, value: %s, dataType: %s", partitionColumnName, partitionValue, partitionDataType);
-        if (partitionValue == null) {
-            return null;
+        if (isNull(partitionValue)) {
+            return Optional.empty();
         }
 
-        String typeBase = partitionDataType.getBase();
-        log.warn(">>> Base Type: %s", typeBase);
+        String baseType = partitionDataType.getBase();
         try {
-            switch (typeBase) {
-                case StandardTypes.TINYINT:
-                case StandardTypes.SMALLINT:
-                case StandardTypes.INTEGER:
-                case StandardTypes.BIGINT:
-                    return parseLong(partitionValue);
-                case StandardTypes.REAL:
-                    return (long) floatToRawIntBits(parseFloat(partitionValue));
-                case StandardTypes.DOUBLE:
-                    return parseDouble(partitionValue);
-                case StandardTypes.VARCHAR:
-                case StandardTypes.VARBINARY:
-                    return utf8Slice(partitionValue);
-                case StandardTypes.DATE:
-                    return LocalDate.parse(partitionValue, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay();
-                case StandardTypes.TIMESTAMP:
-                    return Timestamp.valueOf(partitionValue).toLocalDateTime().toEpochSecond(ZoneOffset.UTC) * 1_000;
-                case StandardTypes.BOOLEAN:
+            switch (baseType) {
+                case TINYINT:
+                case SMALLINT:
+                case INTEGER:
+                case BIGINT:
+                    return Optional.of(parseLong(partitionValue));
+                case REAL:
+                    return Optional.of((long) floatToRawIntBits(parseFloat(partitionValue)));
+                case DOUBLE:
+                    return Optional.of(parseDouble(partitionValue));
+                case VARCHAR:
+                case VARBINARY:
+                    return Optional.of(utf8Slice(partitionValue));
+                case DATE:
+                    return Optional.of(LocalDate.parse(partitionValue, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay());
+                case TIMESTAMP:
+                    return Optional.of(Timestamp.valueOf(partitionValue).toLocalDateTime().toEpochSecond(ZoneOffset.UTC) * 1_000);
+                case BOOLEAN:
                     checkArgument(partitionValue.equalsIgnoreCase("true") || partitionValue.equalsIgnoreCase("false"));
-                    return Boolean.valueOf(partitionValue);
-                case StandardTypes.DECIMAL:
-                    return Decimals.parse(partitionValue).getObject();
+                    return Optional.of(Boolean.valueOf(partitionValue));
+                case DECIMAL:
+                    return Optional.of(Decimals.parse(partitionValue).getObject());
                 default:
                     throw new TrinoException(HUDI_INVALID_PARTITION_VALUE,
                             format("Unsupported data type '%s' for partition column %s", partitionDataType, partitionColumnName));
@@ -157,7 +155,8 @@ public class HudiUtil
         }
     }
 
-    public static List<FileSplit> getSplits(FileSystem fs, FileStatus fileStatus) throws IOException
+    public static List<FileSplit> getSplits(FileSystem fs, FileStatus fileStatus)
+            throws IOException
     {
         if (fileStatus.isDirectory()) {
             throw new IOException("Not a file: " + fileStatus.getPath());
@@ -213,36 +212,31 @@ public class HudiUtil
         return !(filename instanceof PathWithBootstrapFileStatus);
     }
 
-    private static long computeSplitSize(long goalSize, long minSize,
-                          long blockSize)
+    private static long computeSplitSize(long goalSize, long minSize, long blockSize)
     {
         return Math.max(minSize, Math.min(goalSize, blockSize));
     }
 
-    private static FileSplit makeSplit(Path file, long start, long length,
-                                  String[] hosts)
+    private static FileSplit makeSplit(Path file, long start, long length, String[] hosts)
     {
         return new FileSplit(file, start, length, hosts);
     }
 
-    private static FileSplit makeSplit(Path file, long start, long length,
-                                  String[] hosts, String[] inMemoryHosts)
+    private static FileSplit makeSplit(Path file, long start, long length, String[] hosts, String[] inMemoryHosts)
     {
         return new FileSplit(file, start, length, hosts, inMemoryHosts);
     }
 
-    private static String[][] getSplitHostsAndCachedHosts(BlockLocation[] blkLocations,
-                                                   long offset, long splitSize, NetworkTopology clusterMap)
+    private static String[][] getSplitHostsAndCachedHosts(BlockLocation[] blkLocations, long offset, long splitSize, NetworkTopology clusterMap)
             throws IOException
     {
         int startIndex = getBlockIndex(blkLocations, offset);
 
-        return new String[][]{blkLocations[startIndex].getHosts(),
-                    blkLocations[startIndex].getCachedHosts()};
+        return new String[][] {blkLocations[startIndex].getHosts(),
+                blkLocations[startIndex].getCachedHosts()};
     }
 
-    private static int getBlockIndex(BlockLocation[] blkLocations,
-                                long offset)
+    private static int getBlockIndex(BlockLocation[] blkLocations, long offset)
     {
         for (int i = 0; i < blkLocations.length; i++) {
             // is the offset inside this block?
@@ -256,5 +250,41 @@ public class HudiUtil
         throw new IllegalArgumentException("Offset " + offset +
                 " is outside of file (0.." +
                 fileLength + ")");
+    }
+
+    public static List<HivePartitionKey> buildPartitionKeys(List<Column> keys, List<String> values)
+    {
+        ImmutableList.Builder<HivePartitionKey> partitionKeys = ImmutableList.builder();
+        for (int i = 0; i < keys.size(); i++) {
+            String name = keys.get(i).getName();
+            String value = values.get(i);
+            partitionKeys.add(new HivePartitionKey(name, value));
+        }
+        return partitionKeys.build();
+    }
+
+    public static List<String> buildPartitionValues(String partitionNames)
+    {
+        ImmutableList.Builder<String> values = ImmutableList.builder();
+        String[] parts = partitionNames.split("=");
+        if (parts.length == 1) {
+            values.add(unescapePathName(partitionNames));
+            return values.build();
+        }
+        if (parts.length == 2) {
+            values.add(unescapePathName(parts[1]));
+            return values.build();
+        }
+        for (int i = 1; i < parts.length; i++) {
+            String val = parts[i];
+            int j = val.lastIndexOf('/');
+            if (j == -1) {
+                values.add(unescapePathName(val));
+            }
+            else {
+                values.add(unescapePathName(val.substring(0, j)));
+            }
+        }
+        return values.build();
     }
 }

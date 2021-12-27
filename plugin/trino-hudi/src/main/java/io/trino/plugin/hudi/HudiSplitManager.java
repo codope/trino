@@ -70,7 +70,7 @@ public class HudiSplitManager
             DynamicFilter dynamicFilter,
             Constraint constraint)
     {
-        log.warn(" >>>> Getting Splits <<<< ");
+        log.debug(" >>>> Getting Splits <<<< ");
         HiveIdentity identity = new HiveIdentity(session);
         HudiTableHandle hudiTable = (HudiTableHandle) tableHandle;
         SchemaTableName tableName = hudiTable.getSchemaTableName();
@@ -80,6 +80,7 @@ public class HudiSplitManager
         HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
         String tablePath = table.getStorage().getLocation();
         Configuration conf = hdfsEnvironment.getConfiguration(context, new Path(tablePath));
+        // TODO: Do we need below?
         Map<String, String> valByRegex = conf.getValByRegex(HOODIE_CONSUME_MODE_PATTERN_STRING.pattern());
         log.debug("Hoodie consume mode: " + valByRegex);
         HoodieTableMetaClient metaClient = hudiTable.getMetaClient().orElseGet(() -> getMetaClient(conf, hudiTable.getBasePath()));
@@ -87,20 +88,19 @@ public class HudiSplitManager
         log.debug("Table ref: " + table.toString());
         log.debug("HoodieTableMetaClient ref: " + metaClient.toString());
         log.debug("HoodieTableMetaClient base path: " + metaClient.getBasePath());
-        hudiTable.getPartitions().ifPresent(p -> p.forEach(p1 -> log.warn("Partitions from TableHandle: " + p1)));
+        hudiTable.getPartitions().ifPresent(p -> p.forEach(p1 -> log.debug("Partitions from TableHandle: " + p1)));
 
         TupleDomain<ColumnHandle> effectivePredicate = constraint.getSummary();
         log.debug("effectivePredicate: " + effectivePredicate);
 
-        HudiSplitSource splitSource = new HudiSplitSource(identity, metastore, hudiTable, conf,
-                isHudiMetadataEnabled(session), shouldSkipMetaStoreForPartition(session), dynamicFilter);
+        HudiSplitSource splitSource = new HudiSplitSource(
+                identity,
+                metastore,
+                hudiTable,
+                conf,
+                isHudiMetadataEnabled(session),
+                shouldSkipMetaStoreForPartition(session),
+                dynamicFilter);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
-    }
-
-    void printConf(Configuration conf)
-    {
-        for (Map.Entry<String, String> entry : conf) {
-            log.warn("%s=%s\n", entry.getKey(), entry.getValue());
-        }
     }
 }
