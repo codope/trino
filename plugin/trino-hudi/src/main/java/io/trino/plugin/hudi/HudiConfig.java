@@ -57,7 +57,7 @@ public class HudiConfig
         return this.metadataEnabled;
     }
 
-    @Config("hudi.max_split_size")
+    @Config("hudi.max-split-size")
     public HudiConfig setMaxSplitSize(DataSize size)
     {
         this.maxSplitSize = size;
@@ -70,7 +70,7 @@ public class HudiConfig
         return this.maxSplitSize;
     }
 
-    @Config("hudi.skip_metastore_for_partition")
+    @Config("hudi.skip-metastore-for-partition")
     @ConfigDescription("Whether to skip metastore for partition")
     public HudiConfig setSkipMetaStoreForPartition(boolean shouldSkipMetaStoreForPartition)
     {

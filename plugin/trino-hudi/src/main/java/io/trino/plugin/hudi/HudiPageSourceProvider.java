@@ -131,7 +131,6 @@ public class HudiPageSourceProvider
             DynamicFilter dynamicFilter)
     {
         HudiSplit split = (HudiSplit) connectorSplit;
-        HudiTableHandle table = (HudiTableHandle) connectorTable;
         Path path = new Path(split.getPath());
         long start = split.getStart();
         long length = split.getLength();
@@ -183,7 +182,7 @@ public class HudiPageSourceProvider
             ConnectorIdentity identity,
             List<HivePartitionKey> partitionKeys)
     {
-        log.warn(">>> Creating Parquet Page Source with partition keys: %s, columns: %s, predicate: %s", partitionKeys, columns, effectivePredicate);
+        log.debug(">>> Creating Parquet Page Source with partition keys: %s, columns: %s, predicate: %s", partitionKeys, columns, effectivePredicate);
 
         ParquetDataSource dataSource = null;
         // TODO: Reuse some elements of ParquetPageSourceFactory and extract the try block to a new HudiParquetReader class.
@@ -195,7 +194,7 @@ public class HudiPageSourceProvider
             ParquetMetadata parquetMetadata = hdfsEnvironment.doAs(identity, () -> MetadataReader.readFooter(theDataSource));
             FileMetaData fileMetaData = parquetMetadata.getFileMetaData();
             MessageType fileSchema = fileMetaData.getSchema();
-            log.warn(">>> File Schema: " + fileSchema.toString());
+            log.debug(">>> File Schema: " + fileSchema.toString());
 
             Optional<MessageType> message = projectSufficientColumns(columns)
                     .map(projection -> projection.get().stream()
@@ -210,15 +209,15 @@ public class HudiPageSourceProvider
                     .reduce(MessageType::union);
 
             MessageType requestedSchema = message.orElse(new MessageType(fileSchema.getName(), ImmutableList.of()));
-            log.warn(">>> Requested Schema: " + requestedSchema);
+            log.debug(">>> Requested Schema: " + requestedSchema);
             MessageColumnIO messageColumn = getColumnIO(fileSchema, requestedSchema);
 
             Map<List<String>, RichColumnDescriptor> descriptorsByPath = getDescriptors(fileSchema, requestedSchema);
-            log.warn(">>> Ignore stats: " + options.isIgnoreStatistics());
+            log.debug(">>> Ignore stats: " + options.isIgnoreStatistics());
             TupleDomain<ColumnDescriptor> parquetTupleDomain = options.isIgnoreStatistics()
                     ? TupleDomain.all()
                     : getParquetTupleDomain(descriptorsByPath, effectivePredicate, fileSchema, useParquetColumnNames);
-            log.warn(">>> ParquetTupleDomain: %s", parquetTupleDomain.toString());
+            log.debug(">>> ParquetTupleDomain: %s", parquetTupleDomain.toString());
 
             Predicate parquetPredicate = buildPredicate(requestedSchema, parquetTupleDomain, descriptorsByPath, timeZone);
 
@@ -238,7 +237,7 @@ public class HudiPageSourceProvider
                 nextStart += block.getRowCount();
             }
 
-            log.warn("Message Column: %s, Predicate: %s, ColumnIndexes: %s", messageColumn, parquetPredicate.toString(), columnIndexes.build());
+            log.debug("Message Column: %s, Predicate: %s, ColumnIndexes: %s", messageColumn, parquetPredicate.toString(), columnIndexes.build());
             ParquetReader parquetReader = new ParquetReader(
                     Optional.ofNullable(fileMetaData.getCreatedBy()),
                     messageColumn,
@@ -251,13 +250,13 @@ public class HudiPageSourceProvider
                     parquetPredicate,
                     columnIndexes.build());
             Optional<ReaderColumns> readerProjections = projectBaseColumns(columns);
-            log.warn("Reade columns: %s", readerProjections.orElse(null));
+            log.debug("Reade columns: %s", readerProjections.orElse(null));
             List<HiveColumnHandle> baseColumns = readerProjections.map(projection ->
                             projection.get().stream()
                                     .map(HiveColumnHandle.class::cast)
                                     .collect(toUnmodifiableList()))
                     .orElse(columns);
-            log.warn("Base columns: %s", baseColumns);
+            log.debug("Base columns: %s", baseColumns);
 
             for (HiveColumnHandle column : baseColumns) {
                 checkArgument(column == PARQUET_ROW_INDEX_COLUMN || column.getColumnType() == REGULAR, "column type must be REGULAR: %s", column);
@@ -281,9 +280,9 @@ public class HudiPageSourceProvider
                 }
             }
 
-            log.warn("Trino types: %s", trinoTypes.build());
-            log.warn("Internal fields: %s", internalFields.build());
-            log.warn("Row index: %s", rowIndexColumns.build());
+            log.debug("Trino types: %s", trinoTypes.build());
+            log.debug("Internal fields: %s", internalFields.build());
+            log.debug("Row index: %s", rowIndexColumns.build());
 
             return new ParquetPageSource(
                     parquetReader,
@@ -319,7 +318,7 @@ public class HudiPageSourceProvider
             List<HiveColumnHandle> allColumns,
             List<HivePartitionKey> partitionKeys)
     {
-        log.warn(">>> Converting partition values for columns: %s, partition key: %s", allColumns, partitionKeys);
+        log.debug(">>> Converting partition values for columns: %s, partition key: %s", allColumns, partitionKeys);
         return allColumns.stream()
                 .filter(HiveColumnHandle::isPartitionKey)
                 .collect(toMap(
@@ -329,6 +328,6 @@ public class HudiPageSourceProvider
                                 convertPartitionValue(
                                         columnHandle.getName(),
                                         partitionKeys.get(0).getValue(),
-                                        columnHandle.getType().getTypeSignature()))));
+                                        columnHandle.getType().getTypeSignature()).orElse(null))));
     }
 }
