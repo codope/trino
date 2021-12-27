@@ -14,7 +14,6 @@
 
 package io.trino.plugin.hudi;
 
-import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.authentication.HiveIdentity;
@@ -49,7 +48,6 @@ public class HudiSplitManager
         implements ConnectorSplitManager
 {
     public static final Pattern HOODIE_CONSUME_MODE_PATTERN_STRING = Pattern.compile("hoodie\\.(.*)\\.consume\\.mode");
-    private static final Logger log = Logger.get(HudiSplitManager.class);
 
     private final HudiTransactionManager transactionManager;
     private final HdfsEnvironment hdfsEnvironment;
@@ -70,7 +68,6 @@ public class HudiSplitManager
             DynamicFilter dynamicFilter,
             Constraint constraint)
     {
-        log.debug(" >>>> Getting Splits <<<< ");
         HiveIdentity identity = new HiveIdentity(session);
         HudiTableHandle hudiTable = (HudiTableHandle) tableHandle;
         SchemaTableName tableName = hudiTable.getSchemaTableName();
@@ -82,17 +79,8 @@ public class HudiSplitManager
         Configuration conf = hdfsEnvironment.getConfiguration(context, new Path(tablePath));
         // TODO: Do we need below?
         Map<String, String> valByRegex = conf.getValByRegex(HOODIE_CONSUME_MODE_PATTERN_STRING.pattern());
-        log.debug("Hoodie consume mode: " + valByRegex);
         HoodieTableMetaClient metaClient = hudiTable.getMetaClient().orElseGet(() -> getMetaClient(conf, hudiTable.getBasePath()));
-        log.debug("HudiSplitManager ref: " + this.toString());
-        log.debug("Table ref: " + table.toString());
-        log.debug("HoodieTableMetaClient ref: " + metaClient.toString());
-        log.debug("HoodieTableMetaClient base path: " + metaClient.getBasePath());
-        hudiTable.getPartitions().ifPresent(p -> p.forEach(p1 -> log.debug("Partitions from TableHandle: " + p1)));
-
         TupleDomain<ColumnHandle> effectivePredicate = constraint.getSummary();
-        log.debug("effectivePredicate: " + effectivePredicate);
-
         HudiSplitSource splitSource = new HudiSplitSource(
                 identity,
                 metastore,
@@ -101,6 +89,7 @@ public class HudiSplitManager
                 isHudiMetadataEnabled(session),
                 shouldSkipMetaStoreForPartition(session),
                 dynamicFilter);
+
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
 }
