@@ -16,21 +16,24 @@ package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
+import io.airlift.log.Logger;
+import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.plugin.hive.metastore.MetastoreUtil;
 import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.connector.ConnectorPartitionHandle;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
-import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
+import io.trino.spi.type.Type;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -69,11 +72,13 @@ import static java.util.Objects.isNull;
 import static java.util.Objects.nonNull;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.completedFuture;
+import static java.util.stream.Collectors.toList;
 import static org.apache.hudi.common.fs.FSUtils.getRelativePartitionPath;
 
 public class HudiSplitSource
         implements ConnectorSplitSource
 {
+    private static final Logger LOG = Logger.get(HudiSplitSource.class);
     private final HiveIdentity identity;
     private final HiveMetastore metastore;
     private final SchemaTableName tableName;
@@ -86,8 +91,8 @@ public class HudiSplitSource
     private final boolean metadataEnabled;
     private final boolean shouldSkipMetastoreForPartition;
     private final Map<HoodieBaseFile, String> baseFileToPartitionMap;
+    private final List<HiveColumnHandle> partitionColumnHandles;
     private final ArrayDeque<HoodieBaseFile> baseFiles = new ArrayDeque<>();
-    private final DynamicFilter dynamicFilter;
     private final int partitionBatchNum = 32;
 
     private HoodieTableFileSystemView fileSystemView;
@@ -100,9 +105,9 @@ public class HudiSplitSource
             HiveMetastore metastore,
             HudiTableHandle tableHandle,
             Configuration conf,
+            List<HiveColumnHandle> partitionColumnHandles,
             boolean metadataEnabled,
-            boolean shouldSkipMetastoreForPartition,
-            DynamicFilter dynamicFilter)
+            boolean shouldSkipMetastoreForPartition)
     {
         this.identity = identity;
         this.metastore = metastore;
@@ -112,12 +117,12 @@ public class HudiSplitSource
         this.conf = requireNonNull(conf, "conf is null");
         this.tableHandle = requireNonNull(tableHandle, "tableHandle is null");
         this.partitionMap = new HashMap<>();
+        this.partitionColumnHandles = partitionColumnHandles;
         this.metadataEnabled = metadataEnabled;
         this.shouldSkipMetastoreForPartition = shouldSkipMetastoreForPartition;
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
         this.fileSystem = metaClient.getFs();
         this.baseFileToPartitionMap = new HashMap<>();
-        this.dynamicFilter = dynamicFilter;
     }
 
     @Override
@@ -164,10 +169,33 @@ public class HudiSplitSource
             partitionColumns = table.getPartitionColumns();
 
             if (!partitionColumns.isEmpty()) {
+                HoodieTimer timer = new HoodieTimer().startTimer();
+
+                Optional<List<HivePartition>> partitions = tableHandle.getPartitions();
+                if (partitions.isEmpty() || partitions.get().isEmpty()) {
+                    throw new HoodieIOException("Cannot find partitions in the table");
+                }
+                List<Type> partitionTypes = partitionColumnHandles.stream()
+                        .map(HiveColumnHandle::getType)
+                        .collect(toList());
+
+                LOG.warn("partitionColumnHandles: " + partitionColumnHandles);
+
+                TupleDomain<String> partitionKeyFilters = MetastoreUtil.computePartitionKeyFilter(
+                        partitionColumnHandles, tableHandle.getPredicate());
+                LOG.warn("shouldSkipMetastoreForPartition: " + shouldSkipMetastoreForPartition);
+                LOG.warn("Table handle predicate : " + tableHandle.getPredicate().toString());
+
                 if (shouldSkipMetastoreForPartition) {
-                    List<String> partitions = tableHandle.getPartitions().orElseGet(ImmutableList::of).stream()
-                            .map(HivePartition::getPartitionId).collect(Collectors.toList());
-                    tableHandlePartitions = partitions.iterator();
+                    List<String> tablePartitions = tableHandle.getPartitions().orElseGet(ImmutableList::of).stream()
+                            .map(HivePartition::getPartitionId)
+                            .map(partitionName -> HudiUtil.parseValuesAndFilterPartition(
+                                    tableName, partitionName, partitionColumnHandles, partitionTypes, tableHandle.getPredicate()))
+                            .filter(Optional::isPresent)
+                            .map(Optional::get)
+                            .collect(toList());
+                    LOG.warn("full partition names after filtering: " + tablePartitions);
+                    tableHandlePartitions = tablePartitions.iterator();
                 }
                 else {
                     List<String> fullPartitionNames = metastore.getPartitionNamesByFilter(
@@ -177,14 +205,23 @@ public class HudiSplitSource
                                     partitionColumns.stream()
                                             .map(Column::getName)
                                             .collect(Collectors.toList()),
-                                    TupleDomain.all())
-                            .orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()));
+                                    partitionKeyFilters)
+                            .orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()))
+                            .stream()
+                            // Apply extra filters which may not be done by getPartitionNamesByFilter
+                            .map(partitionName -> HudiUtil.parseValuesAndFilterPartition(
+                                    tableName, partitionName, partitionColumnHandles, partitionTypes, tableHandle.getPredicate()))
+                            .filter(Optional::isPresent)
+                            .map(Optional::get)
+                            .collect(toList());
+                    LOG.warn("full partition names after filtering: " + fullPartitionNames);
                     List<List<String>> partitionNameElements = fullPartitionNames
                             .stream()
                             .map(HiveUtil::toPartitionValues)
                             .collect(toImmutableList());
                     metastorePartitions = partitionNameElements.iterator();
                 }
+                LOG.warn(String.format("Time to filter partitions: %d ms", timer.endTimer()));
             }
             else {
                 if (shouldSkipMetastoreForPartition) {

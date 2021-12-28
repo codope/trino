@@ -15,14 +15,19 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.trino.plugin.hive.HiveColumnHandle;
+import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
+import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.Domain;
+import io.trino.spi.predicate.NullableValue;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Decimals;
+import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeSignature;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
@@ -51,6 +56,7 @@ import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.slice.Slices.utf8Slice;
+import static io.trino.plugin.hive.HivePartitionManager.parsePartition;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_PARTITION_VALUE;
 import static io.trino.spi.type.StandardTypes.BIGINT;
 import static io.trino.spi.type.StandardTypes.BOOLEAN;
@@ -74,6 +80,7 @@ import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
 
 public class HudiUtil
 {
+    private static final Logger LOG = Logger.get(HudiUtil.class);
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
 
     private HudiUtil() {}
@@ -108,6 +115,42 @@ public class HudiUtil
         return ImmutableList.of(
                 TupleDomain.withColumnDomains(partitionColumnPredicates),
                 TupleDomain.withColumnDomains(regularColumnPredicates));
+    }
+
+    public static Optional<String> parseValuesAndFilterPartition(
+            SchemaTableName tableName,
+            String partitionId,
+            List<HiveColumnHandle> partitionColumns,
+            List<Type> partitionColumnTypes,
+            TupleDomain<HiveColumnHandle> constraintSummary)
+    {
+        LOG.warn(String.format("partitionId: %s partition Columns: %s", partitionId, partitionColumns));
+        HivePartition partition = parsePartition(tableName, partitionId, partitionColumns, partitionColumnTypes);
+
+        if (partitionMatches(partitionColumns, constraintSummary, partition)) {
+            LOG.warn(String.format("Match %s", partitionId));
+            return Optional.of(partitionId);
+        }
+        LOG.warn(String.format("No match %s", partitionId));
+        return Optional.empty();
+    }
+
+    public static boolean partitionMatches(List<HiveColumnHandle> partitionColumns, TupleDomain<HiveColumnHandle> constraintSummary, HivePartition partition)
+    {
+        if (constraintSummary.isNone()) {
+            LOG.warn("constraintSummary is none");
+            return false;
+        }
+        Map<HiveColumnHandle, Domain> domains = constraintSummary.getDomains().get();
+        for (HiveColumnHandle column : partitionColumns) {
+            NullableValue value = partition.getKeys().get(column);
+            Domain allowedDomain = domains.get(column);
+            if (allowedDomain != null && !allowedDomain.includesNullableValue(value.getValue())) {
+                LOG.warn(String.format("Does not match: %s %s", allowedDomain, value));
+                return false;
+            }
+        }
+        return true;
     }
 
     public static Optional<Object> convertPartitionValue(
