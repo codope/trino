@@ -36,6 +36,7 @@ import io.trino.spi.connector.ConnectorTableProperties;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.ConstraintApplicationResult;
 import io.trino.spi.connector.SchemaTableName;
+import io.trino.spi.connector.SchemaTablePrefix;
 import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.TypeManager;
@@ -68,6 +69,7 @@ import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
 import static io.trino.plugin.hudi.HudiUtil.splitPredicate;
 import static java.lang.String.format;
+import static java.util.Collections.singletonList;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
 import static org.apache.hadoop.hive.metastore.TableType.EXTERNAL_TABLE;
@@ -217,6 +219,25 @@ public class HudiMetadata
 
         tableNames.addAll(listMaterializedViews(session, optionalSchemaName));
         return tableNames.build();
+    }
+
+    @Override
+    public Map<SchemaTableName, List<ColumnMetadata>> listTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
+    {
+        List<SchemaTableName> tables = prefix.getTable()
+                .map(ignored -> singletonList(prefix.toSchemaTableName()))
+                .orElseGet(() -> listTables(session, prefix.getSchema()));
+
+        ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
+        for (SchemaTableName table : tables) {
+            try {
+                columns.put(table, getTableMetadata(session, table).getColumns());
+            }
+            catch (TableNotFoundException e) {
+                // table disappeared during listing operation
+            }
+        }
+        return columns.build();
     }
 
     private List<String> listSchemas(ConnectorSession session, Optional<String> schemaName)
