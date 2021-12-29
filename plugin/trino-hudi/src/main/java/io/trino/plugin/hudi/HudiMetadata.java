@@ -17,6 +17,7 @@ package io.trino.plugin.hudi;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
+import io.airlift.log.Logger;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartition;
@@ -81,6 +82,7 @@ import static org.apache.hudi.exception.TableNotFoundException.checkTableValidit
 public class HudiMetadata
         implements ConnectorMetadata
 {
+    private static final Logger LOG = Logger.get(HudiMetadata.class);
     private final HiveMetastore metastore;
     private final HdfsEnvironment hdfsEnvironment;
     private final TypeManager typeManager;

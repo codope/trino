@@ -16,6 +16,7 @@ package io.trino.plugin.hudi;
 
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
+import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
@@ -36,8 +37,10 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import javax.inject.Inject;
 
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
@@ -71,7 +74,11 @@ public class HudiSplitManager
         HiveIdentity identity = new HiveIdentity(session);
         HudiTableHandle hudiTable = (HudiTableHandle) tableHandle;
         SchemaTableName tableName = hudiTable.getSchemaTableName();
-        HiveMetastore metastore = transactionManager.get(transaction).getMetastore();
+        HudiMetadata hudiMetadata = transactionManager.get(transaction);
+        HiveMetastore metastore = hudiMetadata.getMetastore();
+        List<HiveColumnHandle> partitionColumnHandles = hudiMetadata.getColumnHandles(session, tableHandle)
+                .values().stream().map(HiveColumnHandle.class::cast)
+                .filter(HiveColumnHandle::isPartitionKey).collect(Collectors.toList());
         Table table = metastore.getTable(identity, tableName.getSchemaName(), tableName.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(tableName));
         HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
@@ -86,9 +93,9 @@ public class HudiSplitManager
                 metastore,
                 hudiTable,
                 conf,
+                partitionColumnHandles,
                 isHudiMetadataEnabled(session),
-                shouldSkipMetaStoreForPartition(session),
-                dynamicFilter);
+                shouldSkipMetaStoreForPartition(session));
 
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
