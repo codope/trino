@@ -87,7 +87,9 @@ public class HudiUtil
 
     public static HoodieTableMetaClient getMetaClient(Configuration conf, String basePath)
     {
-        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath)
+                .setBootstrapIndexClassName(HudiHFileBootstrapIndex.class.getName())
+                .build();
     }
 
     public static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)

@@ -242,21 +242,21 @@ public class HudiSplitSource
                 if (shouldSkipMetastoreForPartition) {
                     List<String> batchTableHandlePartitions = new ArrayList<>();
                     Iterators.limit(tableHandlePartitions, partitionBatchNum).forEachRemaining(batchTableHandlePartitions::add);
-                    batchKeyMap = batchTableHandlePartitions.stream().parallel()
+                    batchKeyMap = batchTableHandlePartitions.stream()//.parallel()
                             .map(p -> Pair.of(p, buildPartitionKeys(partitionColumns, buildPartitionValues(p))))
                             .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
                 }
                 else {
                     List<List<String>> batchMetastorePartitions = new ArrayList<>();
                     Iterators.limit(metastorePartitions, partitionBatchNum).forEachRemaining(batchMetastorePartitions::add);
-                    batchKeyMap = batchMetastorePartitions.stream().parallel()
+                    batchKeyMap = batchMetastorePartitions.stream()//.parallel()
                             .map(partitionNames -> getPartitionPathToKeyUsingMetastore(
                                     identity, metastore, table, table.getStorage().getLocation(), partitionNames))
                             .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
                 }
 
                 partitionMap.putAll(batchKeyMap);
-                List<Pair<HoodieBaseFile, String>> baseFilesToAdd = batchKeyMap.keySet().stream().parallel()
+                List<Pair<HoodieBaseFile, String>> baseFilesToAdd = batchKeyMap.keySet().stream()//.parallel()
                         .flatMap(relativePartitionPath -> fileSystemView.getLatestBaseFiles(relativePartitionPath)
                                 .map(baseFile -> new ImmutablePair<>(baseFile, relativePartitionPath))
                                 .collect(Collectors.toList()).stream())
@@ -274,7 +274,7 @@ public class HudiSplitSource
                 batchBaseFiles.add(baseFile);
             }
 
-            List<HudiSplit> hudiSplitsToAdd = batchBaseFiles.stream().parallel()
+            List<HudiSplit> hudiSplitsToAdd = batchBaseFiles.stream()//.parallel()
                     .flatMap(baseFile -> {
                         List<HudiSplit> hudiSplits;
                         try {
