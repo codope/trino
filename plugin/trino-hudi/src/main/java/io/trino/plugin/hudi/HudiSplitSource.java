@@ -182,15 +182,15 @@ public class HudiSplitSource
                 LOG.warn("partitionColumnHandles: " + partitionColumnHandles);
 
                 TupleDomain<String> partitionKeyFilters = MetastoreUtil.computePartitionKeyFilter(
-                        partitionColumnHandles, tableHandle.getPredicate());
+                        partitionColumnHandles, tableHandle.getPartitionPredicates());
                 LOG.warn("shouldSkipMetastoreForPartition: " + shouldSkipMetastoreForPartition);
-                LOG.warn("Table handle predicate : " + tableHandle.getPredicate().toString());
+                LOG.warn("Table handle predicate : " + tableHandle.getPartitionPredicates().toString());
 
                 if (shouldSkipMetastoreForPartition) {
                     List<String> tablePartitions = tableHandle.getPartitions().orElseGet(ImmutableList::of).stream()
                             .map(HivePartition::getPartitionId)
                             .map(partitionName -> HudiUtil.parseValuesAndFilterPartition(
-                                    tableName, partitionName, partitionColumnHandles, partitionTypes, tableHandle.getPredicate()))
+                                    tableName, partitionName, partitionColumnHandles, partitionTypes, tableHandle.getPartitionPredicates()))
                             .filter(Optional::isPresent)
                             .map(Optional::get)
                             .collect(toList());
@@ -210,7 +210,7 @@ public class HudiSplitSource
                             .stream()
                             // Apply extra filters which may not be done by getPartitionNamesByFilter
                             .map(partitionName -> HudiUtil.parseValuesAndFilterPartition(
-                                    tableName, partitionName, partitionColumnHandles, partitionTypes, tableHandle.getPredicate()))
+                                    tableName, partitionName, partitionColumnHandles, partitionTypes, tableHandle.getPartitionPredicates()))
                             .filter(Optional::isPresent)
                             .map(Optional::get)
                             .collect(toList());
@@ -242,17 +242,33 @@ public class HudiSplitSource
                 if (shouldSkipMetastoreForPartition) {
                     List<String> batchTableHandlePartitions = new ArrayList<>();
                     Iterators.limit(tableHandlePartitions, partitionBatchNum).forEachRemaining(batchTableHandlePartitions::add);
-                    batchKeyMap = batchTableHandlePartitions.stream().parallel()
-                            .map(p -> Pair.of(p, buildPartitionKeys(partitionColumns, buildPartitionValues(p))))
-                            .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                    if (!partitionColumns.isEmpty()) {
+                        batchKeyMap = batchTableHandlePartitions.stream().parallel()
+                                .map(p -> Pair.of(p, buildPartitionKeys(partitionColumns, buildPartitionValues(p))))
+                                .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                    }
+                    else {
+                        batchKeyMap = new HashMap<>();
+                        if (!batchTableHandlePartitions.isEmpty()) {
+                            batchKeyMap.put("", new ArrayList<>());
+                        }
+                    }
                 }
                 else {
                     List<List<String>> batchMetastorePartitions = new ArrayList<>();
                     Iterators.limit(metastorePartitions, partitionBatchNum).forEachRemaining(batchMetastorePartitions::add);
-                    batchKeyMap = batchMetastorePartitions.stream().parallel()
-                            .map(partitionNames -> getPartitionPathToKeyUsingMetastore(
-                                    identity, metastore, table, table.getStorage().getLocation(), partitionNames))
-                            .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                    if (!partitionColumns.isEmpty()) {
+                        batchKeyMap = batchMetastorePartitions.stream().parallel()
+                                .map(partitionNames -> getPartitionPathToKeyUsingMetastore(
+                                        identity, metastore, table, table.getStorage().getLocation(), partitionNames))
+                                .collect(Collectors.toMap(Pair::getKey, Pair::getValue));
+                    }
+                    else {
+                        batchKeyMap = new HashMap<>();
+                        if (!batchMetastorePartitions.isEmpty()) {
+                            batchKeyMap.put("", new ArrayList<>());
+                        }
+                    }
                 }
 
                 partitionMap.putAll(batchKeyMap);
@@ -290,7 +306,7 @@ public class HudiSplitSource
                                                     fileSplit.getLength(),
                                                     metaClient.getFs().getLength(fileSplit.getPath()),
                                                     ImmutableList.of(),
-                                                    tableHandle.getPredicate(),
+                                                    tableHandle.getRegularPredicates(),
                                                     partitionMap.get(baseFileToPartitionMap.get(baseFile))));
                                         }
                                         catch (IOException e) {

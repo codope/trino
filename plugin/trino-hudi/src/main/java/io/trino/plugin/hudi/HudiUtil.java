@@ -39,6 +39,7 @@ import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
 
@@ -95,7 +96,7 @@ public class HudiUtil
         return inputFormat instanceof HoodieParquetInputFormat;
     }
 
-    public static List<TupleDomain<ColumnHandle>> splitPredicate(
+    public static HudiPredicates splitPredicate(
             TupleDomain<ColumnHandle> predicate)
     {
         Map<ColumnHandle, Domain> partitionColumnPredicates = new HashMap<>();
@@ -112,9 +113,29 @@ public class HudiUtil
             }
         }));
 
-        return ImmutableList.of(
+        return new HudiPredicates(
                 TupleDomain.withColumnDomains(partitionColumnPredicates),
                 TupleDomain.withColumnDomains(regularColumnPredicates));
+    }
+
+    public static TupleDomain<HiveColumnHandle> mergePredicates(
+            TupleDomain<HiveColumnHandle> predicates1, TupleDomain<HiveColumnHandle> predicates2)
+    {
+        Map<HiveColumnHandle, Domain> newColumnDomains = new HashMap<>();
+        predicates1.getDomains().ifPresent(newColumnDomains::putAll);
+        predicates2.getDomains().ifPresent(domains -> {
+            for (HiveColumnHandle columnHandle : domains.keySet()) {
+                if (newColumnDomains.containsKey(columnHandle)
+                        && !newColumnDomains.get(columnHandle).equals(domains.get(columnHandle))) {
+                    throw new HoodieIOException(String.format("Conflicting predicates for %s: [%s] and [%s]",
+                            columnHandle, newColumnDomains.get(columnHandle), domains.get(columnHandle)));
+                }
+                else {
+                    newColumnDomains.put(columnHandle, domains.get(columnHandle));
+                }
+            }
+        });
+        return TupleDomain.withColumnDomains(newColumnDomains);
     }
 
     public static Optional<String> parseValuesAndFilterPartition(

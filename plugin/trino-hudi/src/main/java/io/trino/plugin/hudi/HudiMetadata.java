@@ -120,6 +120,7 @@ public class HudiMetadata
                 table.get().getStorage().getLocation(),
                 HoodieTableType.COPY_ON_WRITE,
                 TupleDomain.all(),
+                TupleDomain.all(),
                 Optional.of(getTableMetaClient(session, table.get())));
     }
 
@@ -134,17 +135,18 @@ public class HudiMetadata
     public Optional<ConstraintApplicationResult<ConnectorTableHandle>> applyFilter(ConnectorSession session, ConnectorTableHandle tableHandle, Constraint constraint)
     {
         HudiTableHandle handle = (HudiTableHandle) tableHandle;
-        if (constraint.getSummary().equals(handle.getPredicate())) {
+        HudiPredicates predicates = splitPredicate(constraint.getSummary());
+        HudiTableHandle newHudiTableHandle = handle.withPredicates(predicates);
+
+        if (handle.getPartitionPredicates().equals(newHudiTableHandle.getPartitionPredicates())
+                && handle.getRegularPredicates().equals(newHudiTableHandle.getRegularPredicates())) {
+            LOG.info("No new predicates to apply");
             return Optional.empty();
         }
 
-        List<TupleDomain<ColumnHandle>> predicate = splitPredicate(constraint.getSummary());
-        TupleDomain<ColumnHandle> unenforcedPredicate = predicate.get(1);
-        HudiTableHandle newHudiTableHandle = handle.withPredicate(constraint.getSummary().transformKeys(HiveColumnHandle.class::cast));
-
         return Optional.of(new ConstraintApplicationResult<>(
                 newHudiTableHandle,
-                unenforcedPredicate,
+                newHudiTableHandle.getRegularPredicates().transformKeys(ColumnHandle.class::cast),
                 false));
     }
 

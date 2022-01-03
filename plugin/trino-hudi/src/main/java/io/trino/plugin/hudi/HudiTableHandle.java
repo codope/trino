@@ -32,7 +32,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import static com.google.common.base.Preconditions.checkState;
+import static io.trino.plugin.hudi.HudiUtil.mergePredicates;
 import static java.util.Objects.requireNonNull;
 
 public class HudiTableHandle
@@ -42,7 +42,8 @@ public class HudiTableHandle
     private final String tableName;
     private final String basePath;
     private final HoodieTableType tableType;
-    private final TupleDomain<HiveColumnHandle> predicate;
+    private final TupleDomain<HiveColumnHandle> partitionPredicates;
+    private final TupleDomain<HiveColumnHandle> regularPredicates;
     private final Optional<List<HivePartition>> partitions;
     private final Optional<HoodieTableMetaClient> metaClient;
 
@@ -52,9 +53,11 @@ public class HudiTableHandle
             @JsonProperty("tableName") String tableName,
             @JsonProperty("basePath") String basePath,
             @JsonProperty("tableType") HoodieTableType tableType,
-            @JsonProperty("predicate") TupleDomain<HiveColumnHandle> predicate)
+            @JsonProperty("partitionPredicates") TupleDomain<HiveColumnHandle> partitionPredicates,
+            @JsonProperty("regularPredicates") TupleDomain<HiveColumnHandle> regularPredicates)
     {
-        this(schemaName, tableName, basePath, tableType, predicate, Optional.empty(), Optional.empty());
+        this(schemaName, tableName, basePath, tableType, partitionPredicates,
+                regularPredicates, Optional.empty(), Optional.empty());
     }
 
     public HudiTableHandle(
@@ -62,10 +65,12 @@ public class HudiTableHandle
             String tableName,
             String basePath,
             HoodieTableType tableType,
-            TupleDomain<HiveColumnHandle> predicate,
+            TupleDomain<HiveColumnHandle> partitionPredicates,
+            TupleDomain<HiveColumnHandle> regularPredicates,
             Optional<HoodieTableMetaClient> metaClient)
     {
-        this(schemaName, tableName, basePath, tableType, predicate, Optional.empty(), metaClient);
+        this(schemaName, tableName, basePath, tableType, partitionPredicates,
+                regularPredicates, Optional.empty(), metaClient);
     }
 
     public HudiTableHandle(
@@ -73,7 +78,8 @@ public class HudiTableHandle
             String tableName,
             String basePath,
             HoodieTableType tableType,
-            TupleDomain<HiveColumnHandle> predicate,
+            TupleDomain<HiveColumnHandle> partitionPredicates,
+            TupleDomain<HiveColumnHandle> regularPredicates,
             Optional<List<HivePartition>> partitions,
             Optional<HoodieTableMetaClient> metaClient)
     {
@@ -81,7 +87,8 @@ public class HudiTableHandle
         this.tableName = requireNonNull(tableName, "tableName is null");
         this.basePath = requireNonNull(basePath, "basePath is null");
         this.tableType = requireNonNull(tableType, "tableType is null");
-        this.predicate = requireNonNull(predicate, "predicate is null");
+        this.partitionPredicates = requireNonNull(partitionPredicates, "partitionPredicates is null");
+        this.regularPredicates = requireNonNull(regularPredicates, "regularPredicates is null");
         this.partitions = requireNonNull(partitions, "partitions is null").map(ImmutableList::copyOf);
         this.metaClient = requireNonNull(metaClient, "metaClient is null");
     }
@@ -111,9 +118,15 @@ public class HudiTableHandle
     }
 
     @JsonProperty
-    public TupleDomain<HiveColumnHandle> getPredicate()
+    public TupleDomain<HiveColumnHandle> getPartitionPredicates()
     {
-        return predicate;
+        return partitionPredicates;
+    }
+
+    @JsonProperty
+    public TupleDomain<HiveColumnHandle> getRegularPredicates()
+    {
+        return regularPredicates;
     }
 
     @JsonIgnore
@@ -141,15 +154,17 @@ public class HudiTableHandle
         return new SchemaTableName(schemaName, tableName);
     }
 
-    HudiTableHandle withPredicate(TupleDomain<HiveColumnHandle> predicate)
+    HudiTableHandle withPredicates(HudiPredicates predicates)
     {
-        checkState(this.predicate.isAll(), "There is already a predicate.");
         return new HudiTableHandle(
                 schemaName,
                 tableName,
                 basePath,
                 tableType,
-                predicate,
+                mergePredicates(partitionPredicates,
+                        predicates.getPartitionColumnPredicates().transformKeys(HiveColumnHandle.class::cast)),
+                mergePredicates(regularPredicates,
+                        predicates.getRegularColumnPredicates().transformKeys(HiveColumnHandle.class::cast)),
                 partitions,
                 metaClient);
     }
