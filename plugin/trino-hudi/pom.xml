@@ -142,10 +142,10 @@
                     <groupId>org.apache.hadoop</groupId>
                     <artifactId>hadoop-common</artifactId>
                 </exclusion>
-                <exclusion>
+                <!--<exclusion>
                     <groupId>org.apache.hbase</groupId>
                     <artifactId>hbase-shaded-server</artifactId>
-                </exclusion>
+                </exclusion>-->
                 <exclusion>
                     <groupId>org.apache.hudi</groupId>
                     <artifactId>hudi-common</artifactId>
@@ -276,10 +276,23 @@
                 <groupId>org.basepom.maven</groupId>
                 <artifactId>duplicate-finder-maven-plugin</artifactId>
                 <configuration>
+                    <ignoredResourcePatterns>
+                        <ignoredResourcePattern>about.html</ignoredResourcePattern>
+                        <ignoredResourcePattern>google/.*\.proto</ignoredResourcePattern>
+                    </ignoredResourcePatterns>
                     <ignoredClassPatterns>
-                        <ignoredClassPattern>org.apache.parquet.avro.*</ignoredClassPattern>
+                        <ignoredClassPattern>module-info</ignoredClassPattern>
+<!--                        <ignoredClassPattern>org.apache.parquet.avro.*</ignoredClassPattern>-->
                     </ignoredClassPatterns>
                     <ignoredDependencies>
+                        <!--<dependency>
+                            <groupId>org.eclipse.jetty</groupId>
+                            <artifactId>*</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.eclipse.jetty.http2</groupId>
+                            <artifactId>*</artifactId>
+                        </dependency>-->
                         <dependency>
                             <groupId>javax.xml.bind</groupId>
                             <artifactId>jaxb-api</artifactId>
