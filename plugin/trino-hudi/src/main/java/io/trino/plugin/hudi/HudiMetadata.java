@@ -268,7 +268,9 @@ public class HudiMetadata
     {
         String basePath = table.getStorage().getLocation();
         Configuration conf = hdfsEnvironment.getConfiguration(new HdfsEnvironment.HdfsContext(session), new Path(basePath));
-        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath)
+                .setBootstrapIndexClassName(HudiHFileBootstrapIndex.class.getName())
+                .build();
     }
 
     public void rollback()
