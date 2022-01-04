@@ -15,7 +15,6 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
-import io.airlift.units.DataSize;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.session.PropertyMetadata;
@@ -25,17 +24,19 @@ import javax.inject.Inject;
 
 import java.util.List;
 
-import static io.trino.plugin.base.session.PropertyMetadataUtil.dataSizeProperty;
 import static io.trino.spi.session.PropertyMetadata.booleanProperty;
 import static io.trino.spi.session.PropertyMetadata.enumProperty;
+import static io.trino.spi.session.PropertyMetadata.integerProperty;
 
 public class HudiSessionProperties
         implements SessionPropertiesProvider
 {
     private static final String FILE_FORMAT = "file_format";
     private static final String METADATA_ENABLED = "metadata_enabled";
-    private static final String MAX_SPLIT_SIZE = "max_split_size";
     private static final String SKIP_METASTORE_FOR_PARTITION = "skip_metastore_for_partition";
+    private static final String USE_PARQUET_COLUMN_NAMES = "use_parquet_column_names";
+    private static final String PARTITION_SCANNER_PARALLELISM = "partition_scanner_parallelism";
+    private static final String SPLIT_GENERATOR_PARALLELISM = "split_generator_parallelism";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -59,11 +60,21 @@ public class HudiSessionProperties
                         "Whether to skip metastore for partition.",
                         hudiConfig.getSkipMetaStoreForPartition(),
                         false),
-                dataSizeProperty(
-                        MAX_SPLIT_SIZE,
-                        "Max split size",
-                        hudiConfig.getMaxSplitSize(),
-                        true));
+                booleanProperty(
+                        USE_PARQUET_COLUMN_NAMES,
+                        "Whether to use column names from parquet files.",
+                        hudiConfig.getUseParquetColumnNames(),
+                        false),
+                integerProperty(
+                        PARTITION_SCANNER_PARALLELISM,
+                        "Number of threads to use for partition scanners",
+                        hudiConfig.getPartitionScannerParallelism(),
+                        false),
+                integerProperty(
+                        SPLIT_GENERATOR_PARALLELISM,
+                        "Number of threads to use for split generators",
+                        hudiConfig.getSplitGeneratorParallelism(),
+                        false));
     }
 
     @Override
@@ -82,13 +93,23 @@ public class HudiSessionProperties
         return session.getProperty(METADATA_ENABLED, Boolean.class);
     }
 
-    public static DataSize getMaxSplitSize(ConnectorSession session)
-    {
-        return session.getProperty(MAX_SPLIT_SIZE, DataSize.class);
-    }
-
     public static boolean shouldSkipMetaStoreForPartition(ConnectorSession session)
     {
         return session.getProperty(SKIP_METASTORE_FOR_PARTITION, Boolean.class);
+    }
+
+    public static boolean shouldUseParquetColumnNames(ConnectorSession session)
+    {
+        return session.getProperty(USE_PARQUET_COLUMN_NAMES, Boolean.class);
+    }
+
+    public static int getPartitionScannerParallelism(ConnectorSession session)
+    {
+        return session.getProperty(PARTITION_SCANNER_PARALLELISM, Integer.class);
+    }
+
+    public static int getSplitGeneratorParallelism(ConnectorSession session)
+    {
+        return session.getProperty(SPLIT_GENERATOR_PARALLELISM, Integer.class);
     }
 }

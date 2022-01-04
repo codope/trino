@@ -15,7 +15,6 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableMap;
-import io.airlift.units.DataSize;
 import org.testng.annotations.Test;
 
 import java.util.Map;
@@ -34,8 +33,8 @@ public class TestHudiConfig
         assertRecordedDefaults(recordDefaults(HudiConfig.class)
                 .setFileFormat(PARQUET)
                 .setMetadataEnabled(false)
-                .setMaxSplitSize(DataSize.ofBytes(128 * 1024 * 1024))
-                .setSkipMetaStoreForPartition(true));
+                .setSkipMetaStoreForPartition(true)
+                .setUseParquetColumnNames(true));
     }
 
     @Test
@@ -43,16 +42,16 @@ public class TestHudiConfig
     {
         Map<String, String> properties = new ImmutableMap.Builder<String, String>()
                 .put("hudi.file-format", "ORC")
-                .put("hudi.max-split-size", "256MB")
                 .put("hudi.metadata-enabled", "true")
                 .put("hudi.skip-metastore-for-partition", "false")
+                .put("hudi.use-parquet-column-names", "false")
                 .build();
 
         HudiConfig expected = new HudiConfig()
                 .setFileFormat(ORC)
-                .setMaxSplitSize(DataSize.of(256, DataSize.Unit.MEGABYTE))
                 .setMetadataEnabled(true)
-                .setSkipMetaStoreForPartition(false);
+                .setSkipMetaStoreForPartition(false)
+                .setUseParquetColumnNames(false);
 
         assertFullMapping(properties, expected);
     }

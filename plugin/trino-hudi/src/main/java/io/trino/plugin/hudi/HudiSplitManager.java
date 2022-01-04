@@ -20,7 +20,6 @@ import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
-import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
@@ -30,28 +29,20 @@ import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.TableNotFoundException;
-import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import javax.inject.Inject;
 
-import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
-import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
-import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static java.util.Objects.requireNonNull;
+import static java.util.function.Function.identity;
 
 public class HudiSplitManager
         implements ConnectorSplitManager
 {
-    public static final Pattern HOODIE_CONSUME_MODE_PATTERN_STRING = Pattern.compile("hoodie\\.(.*)\\.consume\\.mode");
-
     private final HudiTransactionManager transactionManager;
     private final HdfsEnvironment hdfsEnvironment;
 
@@ -76,26 +67,17 @@ public class HudiSplitManager
         SchemaTableName tableName = hudiTable.getSchemaTableName();
         HudiMetadata hudiMetadata = transactionManager.get(transaction);
         HiveMetastore metastore = hudiMetadata.getMetastore();
-        List<HiveColumnHandle> partitionColumnHandles = hudiMetadata.getColumnHandles(session, tableHandle)
+        Map<String, HiveColumnHandle> partitionColumnHandles = hudiMetadata.getColumnHandles(session, tableHandle)
                 .values().stream().map(HiveColumnHandle.class::cast)
-                .filter(HiveColumnHandle::isPartitionKey).collect(Collectors.toList());
+                .filter(HiveColumnHandle::isPartitionKey)
+                .collect(Collectors.toMap(HiveColumnHandle::getName, identity()));
         Table table = metastore.getTable(identity, tableName.getSchemaName(), tableName.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(tableName));
         HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
         String tablePath = table.getStorage().getLocation();
         Configuration conf = hdfsEnvironment.getConfiguration(context, new Path(tablePath));
-        // TODO: Do we need below?
-        Map<String, String> valByRegex = conf.getValByRegex(HOODIE_CONSUME_MODE_PATTERN_STRING.pattern());
-        HoodieTableMetaClient metaClient = hudiTable.getMetaClient().orElseGet(() -> getMetaClient(conf, hudiTable.getBasePath()));
-        TupleDomain<ColumnHandle> effectivePredicate = constraint.getSummary();
         HudiSplitSource splitSource = new HudiSplitSource(
-                identity,
-                metastore,
-                hudiTable,
-                conf,
-                partitionColumnHandles,
-                isHudiMetadataEnabled(session),
-                shouldSkipMetaStoreForPartition(session));
+                session, metastore, hudiTable, conf, partitionColumnHandles);
 
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }
