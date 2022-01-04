@@ -34,6 +34,7 @@ public class TestHudiTableHandle
                 "table",
                 "/tmp/hudi_trips",
                 HoodieTableType.valueOf(COPY_ON_WRITE.name()),
+                TupleDomain.none(),
                 TupleDomain.all());
 
         String json = codec.toJson(expectedHandle);
@@ -41,7 +42,8 @@ public class TestHudiTableHandle
 
         assertEquals(actualHandle.getSchemaName(), expectedHandle.getSchemaName());
         assertEquals(actualHandle.getTableName(), expectedHandle.getTableName());
-        assertEquals(actualHandle.getPredicate(), expectedHandle.getPredicate());
+        assertEquals(actualHandle.getPartitionPredicates(), expectedHandle.getPartitionPredicates());
+        assertEquals(actualHandle.getRegularPredicates(), expectedHandle.getRegularPredicates());
         assertEquals(actualHandle.getTableType(), expectedHandle.getTableType());
         assertEquals(actualHandle.getBasePath(), expectedHandle.getBasePath());
         assertEquals(actualHandle.getTableType(), expectedHandle.getTableType());
