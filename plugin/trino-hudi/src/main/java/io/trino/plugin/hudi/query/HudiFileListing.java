@@ -79,7 +79,7 @@ public abstract class HudiFileListing
         }
     }
 
-    protected void maybeInitFileSystemViewAndPredicates()
+    protected void initFileSystemViewAndPredicates()
     {
         if (isNull(fileSystemView)) {
             // These are time-consuming operations

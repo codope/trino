@@ -69,7 +69,7 @@ public class HudiReadOptimizedFileListing
     {
         HoodieTimer timer = new HoodieTimer().startTimer();
 
-        maybeInitFileSystemViewAndPredicates();
+        initFileSystemViewAndPredicates();
 
         hiveTable = hiveMetastore.getTable(
                 hiveIdentity, tableName.getSchemaName(), tableName.getTableName())
@@ -135,7 +135,7 @@ public class HudiReadOptimizedFileListing
     @Override
     public List<FileStatus> listStatus(HudiPartitionInfo partitionInfo)
     {
-        maybeInitFileSystemViewAndPredicates();
+        initFileSystemViewAndPredicates();
         return fileSystemView.getLatestBaseFiles(partitionInfo.getRelativePartitionPath())
                 .map(baseFile -> {
                     try {
