@@ -16,7 +16,6 @@ package io.trino.plugin.hudi;
 
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
-import io.airlift.units.DataSize;
 import org.apache.hudi.common.model.HoodieFileFormat;
 
 import javax.validation.constraints.NotNull;
@@ -28,7 +27,9 @@ public class HudiConfig
     private HoodieFileFormat fileFormat = PARQUET;
     private boolean metadataEnabled;
     private boolean shouldSkipMetaStoreForPartition = true;
-    private DataSize maxSplitSize = DataSize.ofBytes(128 * 1024 * 1024);
+    private boolean shouldUseParquetColumnNames = true;
+    private int partitionScannerParallelism = 4;
+    private int splitGeneratorParallelism = 4;
 
     @NotNull
     public HoodieFileFormat getFileFormat()
@@ -57,19 +58,6 @@ public class HudiConfig
         return this.metadataEnabled;
     }
 
-    @Config("hudi.max-split-size")
-    public HudiConfig setMaxSplitSize(DataSize size)
-    {
-        this.maxSplitSize = size;
-        return this;
-    }
-
-    @NotNull
-    public DataSize getMaxSplitSize()
-    {
-        return this.maxSplitSize;
-    }
-
     @Config("hudi.skip-metastore-for-partition")
     @ConfigDescription("Whether to skip metastore for partition")
     public HudiConfig setSkipMetaStoreForPartition(boolean shouldSkipMetaStoreForPartition)
@@ -82,5 +70,48 @@ public class HudiConfig
     public boolean getSkipMetaStoreForPartition()
     {
         return this.shouldSkipMetaStoreForPartition;
+    }
+
+    @Config("hudi.use-parquet-column-names")
+    @ConfigDescription("Whether to use column names from parquet files.  "
+            + "Only applicable to parquet file format.")
+    public HudiConfig setUseParquetColumnNames(boolean shouldUseParquetColumnNames)
+    {
+        this.shouldUseParquetColumnNames = shouldUseParquetColumnNames;
+        return this;
+    }
+
+    @NotNull
+    public boolean getUseParquetColumnNames()
+    {
+        return this.shouldUseParquetColumnNames;
+    }
+
+    @Config("hudi.partition-scanner-parallelism")
+    @ConfigDescription("Number of threads to use for partition scanners")
+    public HudiConfig setPartitionScannerParallelism(int partitionScannerParallelism)
+    {
+        this.partitionScannerParallelism = partitionScannerParallelism;
+        return this;
+    }
+
+    @NotNull
+    public int getPartitionScannerParallelism()
+    {
+        return this.partitionScannerParallelism;
+    }
+
+    @Config("hudi.split-generator-parallelism")
+    @ConfigDescription("Number of threads to use for split generators")
+    public HudiConfig setSplitGeneratorParallelism(int splitGeneratorParallelism)
+    {
+        this.splitGeneratorParallelism = splitGeneratorParallelism;
+        return this;
+    }
+
+    @NotNull
+    public int getSplitGeneratorParallelism()
+    {
+        return this.splitGeneratorParallelism;
     }
 }

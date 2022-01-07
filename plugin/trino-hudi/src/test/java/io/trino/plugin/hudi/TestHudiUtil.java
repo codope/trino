@@ -17,8 +17,13 @@ package io.trino.plugin.hudi;
 import com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
+import org.apache.hudi.hive.HiveStylePartitionValueExtractor;
+import org.apache.hudi.hive.MultiPartKeysValueExtractor;
+import org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor;
+import org.apache.hudi.hive.SlashEncodedHourPartitionValueExtractor;
 import org.testng.annotations.Test;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 
@@ -28,6 +33,7 @@ import static io.trino.plugin.hudi.HudiUtil.buildPartitionValues;
 import static io.trino.plugin.hudi.HudiUtil.isHudiParquetInputFormat;
 import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.FILE_INPUT_FORMAT;
 import static org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_LIB;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
@@ -54,6 +60,27 @@ public class TestHudiUtil
         assertToPartitionValues("a=1/b=2/c=3", ImmutableList.of("1", "2", "3"));
         assertToPartitionValues("pk=!@%23$%25%5E&%2A()%2F%3D", ImmutableList.of("!@#$%^&*()/="));
         assertToPartitionValues("pk=__HIVE_DEFAULT_PARTITION__", ImmutableList.of("__HIVE_DEFAULT_PARTITION__"));
+    }
+
+    @Test
+    public void testInferPartitionValueExtractor()
+    {
+        assertEquals(HudiUtil.inferPartitionValueExtractor(
+                "2022/01/05", Collections.singletonList("2022-01-05")).getClass().getName(),
+                SlashEncodedDayPartitionValueExtractor.class.getName());
+        assertEquals(HudiUtil.inferPartitionValueExtractor(
+                        "2022/01/05/19", Collections.singletonList("2022-01-05-19")).getClass().getName(),
+                SlashEncodedHourPartitionValueExtractor.class.getName());
+        assertEquals(HudiUtil.inferPartitionValueExtractor(
+                        "country=united_states",
+                        Collections.singletonList("united_states")).getClass().getName(),
+                HiveStylePartitionValueExtractor.class.getName());
+        assertEquals(HudiUtil.inferPartitionValueExtractor(
+                        "country=united_states/city=san_francisco",
+                        ImmutableList.of("united_states", "san_francisco")).getClass().getName(),
+                MultiPartKeysValueExtractor.class.getName());
+        assertThatThrownBy(() -> HudiUtil.inferPartitionValueExtractor(
+                "randompartitionpath", Collections.singletonList("")));
     }
 
     private static void assertToPartitionValues(String partitionName, List<String> expected)
