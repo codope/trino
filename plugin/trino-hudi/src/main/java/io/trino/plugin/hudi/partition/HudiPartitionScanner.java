@@ -66,10 +66,9 @@ public class HudiPartitionScanner
                 synchronized (partitionInfoMap) {
                     partitionInfoMap.put(partitionInfo.getRelativePartitionPath(), partitionInfo);
                 }
-                final HudiPartitionInfo finalHudiPartitionInfo = partitionInfo;
+                final String relativePartitionPath = partitionInfo.getRelativePartitionPath();
                 List<Pair<FileStatus, String>> fileStatusList = hudiFileListing.listStatus(partitionInfo).stream()
-                        .map(fileStatus -> new ImmutablePair<>(
-                                fileStatus, finalHudiPartitionInfo.getRelativePartitionPath()))
+                        .map(fileStatus -> new ImmutablePair<>(fileStatus, relativePartitionPath))
                         .collect(Collectors.toList());
                 synchronized (hoodieFileStatusQueue) {
                     hoodieFileStatusQueue.addAll(fileStatusList);

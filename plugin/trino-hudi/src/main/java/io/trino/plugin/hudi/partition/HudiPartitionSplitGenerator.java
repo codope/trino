@@ -16,6 +16,7 @@ package io.trino.plugin.hudi.partition;
 
 import com.google.common.collect.ImmutableList;
 import io.airlift.log.Logger;
+import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hudi.HudiSplit;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.HudiUtil;
@@ -78,18 +79,15 @@ public class HudiPartitionSplitGenerator
                 try {
                     LOG.debug(String.format("fileStatusPartitionPair: %s", fileStatusPartitionPair));
                     String relativePartitionPath = fileStatusPartitionPair.getValue();
+                    final List<HivePartitionKey> hivePartitionKeys;
+                    synchronized (partitionInfoMap) {
+                        hivePartitionKeys = partitionInfoMap.get(relativePartitionPath).getHivePartitionKeys();
+                    }
                     List<HudiSplit> hudiSplits = HudiUtil.getSplits(fileSystem, fileStatusPartitionPair.getKey())
                             .stream()
                             .flatMap(fileSplit -> {
                                 List<HudiSplit> result = new ArrayList<>();
                                 try {
-                                    LOG.debug(String.format("fileSplit: %s", fileSplit));
-                                    LOG.debug(String.format("metaClient.getFs(): %s", metaClient.getFs()));
-                                    LOG.debug(String.format("tableHandle.getRegularPredicates(): %s", tableHandle.getRegularPredicates()));
-
-                                    LOG.debug(String.format("Partition path: %s %s", relativePartitionPath,
-                                            partitionInfoMap.get(relativePartitionPath)));
-
                                     result.add(new HudiSplit(
                                             fileSplit.getPath().toString(),
                                             fileSplit.getStart(),
@@ -97,7 +95,7 @@ public class HudiPartitionSplitGenerator
                                             metaClient.getFs().getLength(fileSplit.getPath()),
                                             ImmutableList.of(),
                                             tableHandle.getRegularPredicates(),
-                                            partitionInfoMap.get(relativePartitionPath).getHivePartitionKeys()));
+                                            hivePartitionKeys));
                                 }
                                 catch (IOException e) {
                                     throw new HoodieIOException(String.format(
