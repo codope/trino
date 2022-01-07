@@ -77,7 +77,6 @@ public class HudiPartitionSplitGenerator
             }
             if (fileStatusPartitionPair != null) {
                 try {
-                    LOG.debug(String.format("fileStatusPartitionPair: %s", fileStatusPartitionPair));
                     String relativePartitionPath = fileStatusPartitionPair.getValue();
                     final List<HivePartitionKey> hivePartitionKeys;
                     synchronized (partitionInfoMap) {

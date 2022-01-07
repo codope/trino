@@ -130,6 +130,6 @@ public class HudiSplitBackgroundLoader
             }
         }
 
-        LOG.info(String.format("Finish getting all splits in %d ms", timer.endTimer()));
+        LOG.debug(String.format("Finish getting all splits in %d ms", timer.endTimer()));
     }
 }
