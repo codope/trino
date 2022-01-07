@@ -22,12 +22,11 @@ import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.query.HudiFileListing;
 import io.trino.plugin.hudi.query.HudiFileListingFactory;
 import io.trino.plugin.hudi.query.HudiQueryMode;
+import io.trino.plugin.hudi.split.HudiSplitBackgroundLoader;
 import io.trino.spi.connector.ConnectorPartitionHandle;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
-import io.trino.spi.connector.SchemaTableName;
-import io.trino.spi.connector.TableNotFoundException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
@@ -45,8 +44,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import static io.trino.plugin.hudi.HudiSessionProperties.getPartitionScannerParallelism;
-import static io.trino.plugin.hudi.HudiSessionProperties.getSplitGeneratorParallelism;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
 import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
@@ -59,8 +56,6 @@ public class HudiSplitSource
     private static final Logger LOG = Logger.get(HudiSplitSource.class);
     private static final long IDLE_WAIT_TIME_MS = 10;
     private final HiveIdentity identity;
-    private final SchemaTableName tableName;
-    private final Table table;
     private final HoodieTableMetaClient metaClient;
     private final boolean metadataEnabled;
     private final boolean shouldSkipMetastoreForPartition;
@@ -73,14 +68,12 @@ public class HudiSplitSource
     public HudiSplitSource(
             ConnectorSession session,
             HiveMetastore metastore,
+            Table table,
             HudiTableHandle tableHandle,
             Configuration conf,
             Map<String, HiveColumnHandle> partitionColumnHandleMap)
     {
         this.identity = new HiveIdentity(session);
-        this.tableName = tableHandle.getSchemaTableName();
-        this.table = metastore.getTable(identity, tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(tableName));
         this.metadataEnabled = isHudiMetadataEnabled(session);
         this.shouldSkipMetastoreForPartition = shouldSkipMetaStoreForPartition(session);
         this.metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
@@ -92,12 +85,11 @@ public class HudiSplitSource
                 .map(column -> partitionColumnHandleMap.get(column.getName())).collect(toList());
         // TODO: fetch the query mode from config / query context
         this.hudiFileListing = HudiFileListingFactory.get(HudiQueryMode.READ_OPTIMIZED,
-                metadataConfig, engineContext, tableHandle, metaClient, metastore, identity,
-                partitionColumnHandles, shouldSkipMetastoreForPartition);
+                metadataConfig, engineContext, tableHandle, metaClient, metastore, table,
+                identity, partitionColumnHandles, shouldSkipMetastoreForPartition);
         this.connectorSplitQueue = new ArrayDeque<>();
         this.splitLoader = new HudiSplitBackgroundLoader(
-                tableHandle, metaClient, hudiFileListing, connectorSplitQueue,
-                getPartitionScannerParallelism(session), getSplitGeneratorParallelism(session));
+                session, tableHandle, metaClient, hudiFileListing, connectorSplitQueue);
         this.splitLoaderExecutorService = Executors.newSingleThreadScheduledExecutor();
         this.splitLoaderFuture = this.splitLoaderExecutorService.schedule(
                 this.splitLoader, 0, TimeUnit.MILLISECONDS);
@@ -112,22 +104,22 @@ public class HudiSplitSource
 
         HoodieTimer timer = new HoodieTimer().startTimer();
         List<ConnectorSplit> connectorSplits = new ArrayList<>();
-        while (!isFinished() && connectorSplits.size() < maxSize) {
-            while (!isFinished() && connectorSplitQueue.isEmpty()) {
-                try {
-                    Thread.sleep(IDLE_WAIT_TIME_MS);
-                }
-                catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
 
-            synchronized (connectorSplitQueue) {
-                while (connectorSplits.size() < maxSize && !connectorSplitQueue.isEmpty()) {
-                    connectorSplits.add(connectorSplitQueue.pollFirst());
-                }
+        while (!splitLoaderFuture.isDone() && connectorSplitQueue.isEmpty()) {
+            try {
+                Thread.sleep(IDLE_WAIT_TIME_MS);
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
+
+        synchronized (connectorSplitQueue) {
+            while (connectorSplits.size() < maxSize && !connectorSplitQueue.isEmpty()) {
+                connectorSplits.add(connectorSplitQueue.pollFirst());
+            }
+        }
+
         LOG.warn(String.format("Get the next batch of %d splits in %d ms", connectorSplits.size(), timer.endTimer()));
         return completedFuture(new ConnectorSplitBatch(connectorSplits, isFinished()));
     }

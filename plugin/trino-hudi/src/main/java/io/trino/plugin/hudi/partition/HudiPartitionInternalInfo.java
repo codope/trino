@@ -17,6 +17,7 @@ package io.trino.plugin.hudi.partition;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.metastore.Column;
+import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiUtil;
 import io.trino.spi.predicate.TupleDomain;
@@ -25,6 +26,7 @@ import org.apache.hudi.hive.PartitionValueExtractor;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.isNull;
@@ -85,6 +87,19 @@ public class HudiPartitionInternalInfo
         return HudiUtil.doesPartitionMatchPredicates(
                 table.getSchemaTableName(), relativePartitionPath, partitionValues,
                 partitionColumnHandles, constraintSummary);
+    }
+
+    @Override
+    public String getComparingKey()
+    {
+        return relativePartitionPath;
+    }
+
+    @Override
+    public void loadPartitionInfo(Optional<Partition> partition)
+    {
+        throw new HoodieException(
+                "HudiPartitionInternalInfo::loadPartitionInfo() should not be called");
     }
 
     @Override

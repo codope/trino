@@ -17,6 +17,7 @@ package io.trino.plugin.hudi.query;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiTableHandle;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
@@ -32,18 +33,18 @@ public final class HudiFileListingFactory
     public static HudiFileListing get(
             HudiQueryMode queryMode, HoodieMetadataConfig metadataConfig,
             HoodieEngineContext engineContext, HudiTableHandle tableHandle,
-            HoodieTableMetaClient metaClient, HiveMetastore hiveMetastore,
+            HoodieTableMetaClient metaClient, HiveMetastore hiveMetastore, Table hiveTable,
             HiveIdentity hiveIdentity, List<HiveColumnHandle> partitionColumnHandles,
             boolean shouldSkipMetastoreForPartition)
     {
         switch (queryMode) {
             case SNAPSHOT:
                 return new HudiSnapshotFileListing(metadataConfig, engineContext, tableHandle,
-                        metaClient, hiveMetastore, hiveIdentity, partitionColumnHandles,
+                        metaClient, hiveMetastore, hiveTable, hiveIdentity, partitionColumnHandles,
                         shouldSkipMetastoreForPartition);
             case READ_OPTIMIZED:
                 return new HudiReadOptimizedFileListing(metadataConfig, engineContext, tableHandle,
-                        metaClient, hiveMetastore, hiveIdentity, partitionColumnHandles,
+                        metaClient, hiveMetastore, hiveTable, hiveIdentity, partitionColumnHandles,
                         shouldSkipMetastoreForPartition);
             default:
                 throw new HoodieException(

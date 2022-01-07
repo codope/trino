@@ -14,10 +14,10 @@
 
 package io.trino.plugin.hudi;
 
+import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
-import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.spi.connector.ConnectorSession;
@@ -27,8 +27,6 @@ import io.trino.spi.connector.ConnectorTableHandle;
 import io.trino.spi.connector.ConnectorTransactionHandle;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
-import io.trino.spi.connector.SchemaTableName;
-import io.trino.spi.connector.TableNotFoundException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 
@@ -43,6 +41,7 @@ import static java.util.function.Function.identity;
 public class HudiSplitManager
         implements ConnectorSplitManager
 {
+    private static final Logger LOG = Logger.get(HudiSplitManager.class);
     private final HudiTransactionManager transactionManager;
     private final HdfsEnvironment hdfsEnvironment;
 
@@ -62,22 +61,22 @@ public class HudiSplitManager
             DynamicFilter dynamicFilter,
             Constraint constraint)
     {
-        HiveIdentity identity = new HiveIdentity(session);
         HudiTableHandle hudiTable = (HudiTableHandle) tableHandle;
-        SchemaTableName tableName = hudiTable.getSchemaTableName();
         HudiMetadata hudiMetadata = transactionManager.get(transaction);
         HiveMetastore metastore = hudiMetadata.getMetastore();
         Map<String, HiveColumnHandle> partitionColumnHandles = hudiMetadata.getColumnHandles(session, tableHandle)
                 .values().stream().map(HiveColumnHandle.class::cast)
                 .filter(HiveColumnHandle::isPartitionKey)
                 .collect(Collectors.toMap(HiveColumnHandle::getName, identity()));
-        Table table = metastore.getTable(identity, tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(tableName));
+        Table hiveTable = hudiMetadata.getTable();
         HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
-        String tablePath = table.getStorage().getLocation();
-        Configuration conf = hdfsEnvironment.getConfiguration(context, new Path(tablePath));
+        Configuration conf = hdfsEnvironment.getConfiguration(
+                context, new Path(hiveTable.getStorage().getLocation()));
+
         HudiSplitSource splitSource = new HudiSplitSource(
-                session, metastore, hudiTable, conf, partitionColumnHandles);
+                session, metastore, hiveTable, hudiTable, conf, partitionColumnHandles);
+
+        LOG.debug("New split source from Hudi split manager: " + splitSource);
 
         return new ClassLoaderSafeConnectorSplitSource(splitSource, Thread.currentThread().getContextClassLoader());
     }

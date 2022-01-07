@@ -34,6 +34,7 @@ public class HudiPartitionScanner
     private final ArrayDeque<HudiPartitionInfo> partitionQueue;
     private final Map<String, HudiPartitionInfo> partitionInfoMap;
     private final ArrayDeque<Pair<FileStatus, String>> hoodieFileStatusQueue;
+    private boolean isRunning;
 
     public HudiPartitionScanner(
             HudiFileListing hudiFileListing,
@@ -45,6 +46,7 @@ public class HudiPartitionScanner
         this.partitionQueue = partitionQueue;
         this.partitionInfoMap = partitionInfoMap;
         this.hoodieFileStatusQueue = hoodieFileStatusQueue;
+        this.isRunning = true;
     }
 
     @Override
@@ -52,7 +54,7 @@ public class HudiPartitionScanner
     {
         HoodieTimer timer = new HoodieTimer().startTimer();
 
-        while (!partitionQueue.isEmpty()) {
+        while (isRunning || !partitionQueue.isEmpty()) {
             HudiPartitionInfo partitionInfo = null;
             synchronized (partitionQueue) {
                 if (!partitionQueue.isEmpty()) {
@@ -61,22 +63,31 @@ public class HudiPartitionScanner
             }
 
             if (partitionInfo != null) {
-                // Load Hive partition keys
-                partitionInfo.getHivePartitionKeys();
-                synchronized (partitionInfoMap) {
-                    partitionInfoMap.put(partitionInfo.getRelativePartitionPath(), partitionInfo);
-                }
-                final String relativePartitionPath = partitionInfo.getRelativePartitionPath();
-                List<Pair<FileStatus, String>> fileStatusList = hudiFileListing.listStatus(partitionInfo).stream()
-                        .map(fileStatus -> new ImmutablePair<>(fileStatus, relativePartitionPath))
-                        .collect(Collectors.toList());
-                synchronized (hoodieFileStatusQueue) {
-                    hoodieFileStatusQueue.addAll(fileStatusList);
-                }
-                LOG.debug(String.format("Add %d base files for %s",
-                        fileStatusList.size(), partitionInfo.getRelativePartitionPath()));
+                scanPartition(partitionInfo);
             }
         }
         LOG.debug(String.format("HudiPartitionScanner %s finishes in %d ms", this, timer.endTimer()));
+    }
+
+    public void stopRunning()
+    {
+        this.isRunning = false;
+    }
+
+    private void scanPartition(HudiPartitionInfo partitionInfo)
+    {
+        // Load Hive partition keys
+        synchronized (partitionInfoMap) {
+            partitionInfoMap.put(partitionInfo.getRelativePartitionPath(), partitionInfo);
+        }
+        final String relativePartitionPath = partitionInfo.getRelativePartitionPath();
+        List<Pair<FileStatus, String>> fileStatusList = hudiFileListing.listStatus(partitionInfo).stream()
+                .map(fileStatus -> new ImmutablePair<>(fileStatus, relativePartitionPath))
+                .collect(Collectors.toList());
+        synchronized (hoodieFileStatusQueue) {
+            hoodieFileStatusQueue.addAll(fileStatusList);
+        }
+        LOG.debug(String.format("Add %d base files for %s",
+                fileStatusList.size(), partitionInfo.getRelativePartitionPath()));
     }
 }

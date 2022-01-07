@@ -15,7 +15,9 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.units.DataSize;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
+import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.session.PropertyMetadata;
 import org.apache.hudi.common.model.HoodieFileFormat;
@@ -24,9 +26,13 @@ import javax.inject.Inject;
 
 import java.util.List;
 
+import static io.trino.plugin.base.session.PropertyMetadataUtil.dataSizeProperty;
+import static io.trino.spi.StandardErrorCode.INVALID_SESSION_PROPERTY;
 import static io.trino.spi.session.PropertyMetadata.booleanProperty;
+import static io.trino.spi.session.PropertyMetadata.doubleProperty;
 import static io.trino.spi.session.PropertyMetadata.enumProperty;
 import static io.trino.spi.session.PropertyMetadata.integerProperty;
+import static java.lang.String.format;
 
 public class HudiSessionProperties
         implements SessionPropertiesProvider
@@ -37,6 +43,11 @@ public class HudiSessionProperties
     private static final String USE_PARQUET_COLUMN_NAMES = "use_parquet_column_names";
     private static final String PARTITION_SCANNER_PARALLELISM = "partition_scanner_parallelism";
     private static final String SPLIT_GENERATOR_PARALLELISM = "split_generator_parallelism";
+    private static final String MIN_PARTITION_BATCH_SIZE = "min_partition_batch_size";
+    private static final String MAX_PARTITION_BATCH_SIZE = "max_partition_batch_size";
+    private static final String SIZE_BASED_SPLIT_WEIGHTS_ENABLED = "size_based_split_weights_enabled";
+    private static final String STANDARD_SPLIT_WEIGHT_SIZE = "standard_split_weight_size";
+    private static final String MINIMUM_ASSIGNED_SPLIT_WEIGHT = "minimum_assigned_split_weight";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -74,6 +85,37 @@ public class HudiSessionProperties
                         SPLIT_GENERATOR_PARALLELISM,
                         "Number of threads to use for split generators",
                         hudiConfig.getSplitGeneratorParallelism(),
+                        false),
+                integerProperty(
+                        MIN_PARTITION_BATCH_SIZE,
+                        "Minimum partition batch size",
+                        hudiConfig.getMinPartitionBatchSize(),
+                        false),
+                integerProperty(
+                        MAX_PARTITION_BATCH_SIZE,
+                        "Maximum partition batch size",
+                        hudiConfig.getMaxPartitionBatchSize(),
+                        false),
+                booleanProperty(
+                        SIZE_BASED_SPLIT_WEIGHTS_ENABLED,
+                        "Enable estimating split weights based on size in bytes",
+                        hudiConfig.isSizeBasedSplitWeightsEnabled(),
+                        false),
+                dataSizeProperty(
+                        STANDARD_SPLIT_WEIGHT_SIZE,
+                        "The split size corresponding to the standard weight (1.0) "
+                                + "when size based split weights are enabled",
+                        hudiConfig.getStandardSplitWeightSize(),
+                        false),
+                doubleProperty(
+                        MINIMUM_ASSIGNED_SPLIT_WEIGHT,
+                        "Minimum assigned split weight when size based split weights are enabled",
+                        hudiConfig.getMinimumAssignedSplitWeight(),
+                        value -> {
+                            if (!Double.isFinite(value) || value <= 0 || value > 1) {
+                                throw new TrinoException(INVALID_SESSION_PROPERTY, format("%s must be > 0 and <= 1.0: %s", MINIMUM_ASSIGNED_SPLIT_WEIGHT, value));
+                            }
+                        },
                         false));
     }
 
@@ -111,5 +153,30 @@ public class HudiSessionProperties
     public static int getSplitGeneratorParallelism(ConnectorSession session)
     {
         return session.getProperty(SPLIT_GENERATOR_PARALLELISM, Integer.class);
+    }
+
+    public static int getMinPartitionBatchSize(ConnectorSession session)
+    {
+        return session.getProperty(MIN_PARTITION_BATCH_SIZE, Integer.class);
+    }
+
+    public static int getMaxPartitionBatchSize(ConnectorSession session)
+    {
+        return session.getProperty(MAX_PARTITION_BATCH_SIZE, Integer.class);
+    }
+
+    public static boolean isSizeBasedSplitWeightsEnabled(ConnectorSession session)
+    {
+        return session.getProperty(SIZE_BASED_SPLIT_WEIGHTS_ENABLED, Boolean.class);
+    }
+
+    public static DataSize getStandardSplitWeightSize(ConnectorSession session)
+    {
+        return session.getProperty(STANDARD_SPLIT_WEIGHT_SIZE, DataSize.class);
+    }
+
+    public static double getMinimumAssignedSplitWeight(ConnectorSession session)
+    {
+        return session.getProperty(MINIMUM_ASSIGNED_SPLIT_WEIGHT, Double.class);
     }
 }

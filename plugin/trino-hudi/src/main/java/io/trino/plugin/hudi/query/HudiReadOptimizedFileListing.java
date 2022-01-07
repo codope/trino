@@ -20,6 +20,7 @@ import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiSplitSource;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.HudiUtil;
@@ -57,10 +58,10 @@ public class HudiReadOptimizedFileListing
     public HudiReadOptimizedFileListing(
             HoodieMetadataConfig metadataConfig, HoodieEngineContext engineContext,
             HudiTableHandle tableHandle, HoodieTableMetaClient metaClient,
-            HiveMetastore hiveMetastore, HiveIdentity hiveIdentity,
+            HiveMetastore hiveMetastore, Table hiveTable, HiveIdentity hiveIdentity,
             List<HiveColumnHandle> partitionColumnHandles, boolean shouldSkipMetastoreForPartition)
     {
-        super(metadataConfig, engineContext, tableHandle, metaClient, hiveMetastore,
+        super(metadataConfig, engineContext, tableHandle, metaClient, hiveMetastore, hiveTable,
                 hiveIdentity, partitionColumnHandles, shouldSkipMetastoreForPartition);
     }
 
@@ -71,9 +72,6 @@ public class HudiReadOptimizedFileListing
 
         initFileSystemViewAndPredicates();
 
-        hiveTable = hiveMetastore.getTable(
-                hiveIdentity, tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(tableName));
         partitionColumns = hiveTable.getPartitionColumns();
         List<HudiPartitionInfo> allPartitionInfoList = null;
 

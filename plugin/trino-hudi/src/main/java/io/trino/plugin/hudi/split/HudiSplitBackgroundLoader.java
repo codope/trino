@@ -12,13 +12,17 @@
  * limitations under the License.
  */
 
-package io.trino.plugin.hudi;
+package io.trino.plugin.hudi.split;
 
 import io.airlift.log.Logger;
+import io.airlift.units.DataSize;
+import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
+import io.trino.plugin.hudi.partition.HudiPartitionInfoLoader;
 import io.trino.plugin.hudi.partition.HudiPartitionScanner;
 import io.trino.plugin.hudi.partition.HudiPartitionSplitGenerator;
 import io.trino.plugin.hudi.query.HudiFileListing;
+import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -36,10 +40,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import static io.trino.plugin.hudi.HudiSessionProperties.getMinimumAssignedSplitWeight;
+import static io.trino.plugin.hudi.HudiSessionProperties.getPartitionScannerParallelism;
+import static io.trino.plugin.hudi.HudiSessionProperties.getSplitGeneratorParallelism;
+import static io.trino.plugin.hudi.HudiSessionProperties.getStandardSplitWeightSize;
+import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeightsEnabled;
+
 public class HudiSplitBackgroundLoader
         implements Runnable
 {
     private static final Logger LOG = Logger.get(HudiSplitBackgroundLoader.class);
+    private final ConnectorSession session;
     private final HudiTableHandle tableHandle;
     private final HoodieTableMetaClient metaClient;
     private final HudiFileListing hudiFileListing;
@@ -47,19 +58,23 @@ public class HudiSplitBackgroundLoader
     private final ArrayDeque<HudiPartitionInfo> partitionQueue;
     private final Map<String, HudiPartitionInfo> partitionInfoMap;
     private final ArrayDeque<Pair<FileStatus, String>> hoodieFileStatusQueue;
+    private final ExecutorService partitionInfoLoaderExecutorService;
     private final ExecutorService partitionScannerExecutorService;
     private final ExecutorService splitGeneratorExecutorService;
     private final int partitionScannerNumThreads;
     private final int splitGeneratorNumThreads;
+    private final boolean sizeBasedSplitWeightsEnabled;
+    private final DataSize standardSplitWeightSize;
+    private final double minimumAssignedSplitWeight;
 
     public HudiSplitBackgroundLoader(
+            ConnectorSession session,
             HudiTableHandle tableHandle,
             HoodieTableMetaClient metaClient,
             HudiFileListing hudiFileListing,
-            ArrayDeque<ConnectorSplit> connectorSplitQueue,
-            int partitionScannerNumThreads,
-            int splitGeneratorNumThreads)
+            ArrayDeque<ConnectorSplit> connectorSplitQueue)
     {
+        this.session = session;
         this.tableHandle = tableHandle;
         this.metaClient = metaClient;
         this.hudiFileListing = hudiFileListing;
@@ -67,10 +82,14 @@ public class HudiSplitBackgroundLoader
         this.partitionQueue = new ArrayDeque<>();
         this.partitionInfoMap = new HashMap<>();
         this.hoodieFileStatusQueue = new ArrayDeque<>();
-        this.partitionScannerNumThreads = partitionScannerNumThreads;
-        this.splitGeneratorNumThreads = splitGeneratorNumThreads;
+        this.partitionScannerNumThreads = getPartitionScannerParallelism(session);
+        this.splitGeneratorNumThreads = getSplitGeneratorParallelism(session);
+        this.partitionInfoLoaderExecutorService = Executors.newSingleThreadExecutor();
         this.partitionScannerExecutorService = Executors.newFixedThreadPool(partitionScannerNumThreads);
         this.splitGeneratorExecutorService = Executors.newFixedThreadPool(splitGeneratorNumThreads);
+        this.sizeBasedSplitWeightsEnabled = isSizeBasedSplitWeightsEnabled(session);
+        this.standardSplitWeightSize = getStandardSplitWeightSize(session);
+        this.minimumAssignedSplitWeight = getMinimumAssignedSplitWeight(session);
     }
 
     @Override
@@ -79,25 +98,45 @@ public class HudiSplitBackgroundLoader
         HoodieTimer timer = new HoodieTimer().startTimer();
         FileSystem fileSystem = metaClient.getFs();
 
-        partitionQueue.addAll(hudiFileListing.getPartitionsToScan());
+        HudiPartitionInfoLoader partitionInfoLoader =
+                new HudiPartitionInfoLoader(session, hudiFileListing, partitionQueue);
 
+        Future partitionInfoLoaderFuture = partitionInfoLoaderExecutorService.submit(partitionInfoLoader);
+
+        List<HudiPartitionScanner> partitionScannerList = new ArrayList<>();
         List<Future> partitionScannerFutures = new ArrayList<>();
 
         for (int i = 0; i < partitionScannerNumThreads; i++) {
-            partitionScannerFutures.add(partitionScannerExecutorService.submit(
-                    new HudiPartitionScanner(hudiFileListing,
-                            partitionQueue, partitionInfoMap, hoodieFileStatusQueue)));
+            HudiPartitionScanner scanner = new HudiPartitionScanner(hudiFileListing,
+                    partitionQueue, partitionInfoMap, hoodieFileStatusQueue);
+            partitionScannerList.add(scanner);
+            partitionScannerFutures.add(partitionScannerExecutorService.submit(scanner));
         }
 
         List<HudiPartitionSplitGenerator> splitGeneratorList = new ArrayList<>();
         List<Future> splitGeneratorFutures = new ArrayList<>();
 
         for (int i = 0; i < splitGeneratorNumThreads; i++) {
+            HudiSplitWeightProvider splitWeightProvider = sizeBasedSplitWeightsEnabled
+                    ? new SizeBasedSplitWeightProvider(minimumAssignedSplitWeight, standardSplitWeightSize)
+                    : HudiSplitWeightProvider.uniformStandardWeightProvider();
             HudiPartitionSplitGenerator generator = new HudiPartitionSplitGenerator(
-                    fileSystem, metaClient, tableHandle, partitionInfoMap,
-                    hoodieFileStatusQueue, connectorSplitQueue);
+                    fileSystem, metaClient, tableHandle, splitWeightProvider,
+                    partitionInfoMap, hoodieFileStatusQueue, connectorSplitQueue);
             splitGeneratorList.add(generator);
             splitGeneratorFutures.add(splitGeneratorExecutorService.submit(generator));
+        }
+
+        // Wait for partition info loader to finish
+        try {
+            partitionInfoLoaderFuture.get();
+        }
+        catch (InterruptedException | ExecutionException e) {
+            e.printStackTrace();
+        }
+
+        for (HudiPartitionScanner scanner : partitionScannerList) {
+            scanner.stopRunning();
         }
 
         // Wait for all partition scanners to finish

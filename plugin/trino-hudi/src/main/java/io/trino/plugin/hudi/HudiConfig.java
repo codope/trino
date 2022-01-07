@@ -16,10 +16,15 @@ package io.trino.plugin.hudi;
 
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
+import io.airlift.units.DataSize;
 import org.apache.hudi.common.model.HoodieFileFormat;
 
+import javax.validation.constraints.DecimalMax;
+import javax.validation.constraints.DecimalMin;
+import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 
+import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 
 public class HudiConfig
@@ -28,8 +33,13 @@ public class HudiConfig
     private boolean metadataEnabled;
     private boolean shouldSkipMetaStoreForPartition = true;
     private boolean shouldUseParquetColumnNames = true;
-    private int partitionScannerParallelism = 4;
-    private int splitGeneratorParallelism = 4;
+    private int partitionScannerParallelism = 16;
+    private int splitGeneratorParallelism = 16;
+    private int minPartitionBatchSize = 10;
+    private int maxPartitionBatchSize = 100;
+    private boolean sizeBasedSplitWeightsEnabled = true;
+    private DataSize standardSplitWeightSize = DataSize.of(128, MEGABYTE);
+    private double minimumAssignedSplitWeight = 0.05;
 
     @NotNull
     public HoodieFileFormat getFileFormat()
@@ -113,5 +123,74 @@ public class HudiConfig
     public int getSplitGeneratorParallelism()
     {
         return this.splitGeneratorParallelism;
+    }
+
+    @Config("hudi.min-partition-batch-size")
+    public HudiConfig setMinPartitionBatchSize(int minPartitionBatchSize)
+    {
+        this.minPartitionBatchSize = minPartitionBatchSize;
+        return this;
+    }
+
+    @Min(1)
+    public int getMinPartitionBatchSize()
+    {
+        return minPartitionBatchSize;
+    }
+
+    @Config("hudi.max-partition-batch-size")
+    public HudiConfig setMaxPartitionBatchSize(int maxPartitionBatchSize)
+    {
+        this.maxPartitionBatchSize = maxPartitionBatchSize;
+        return this;
+    }
+
+    @Min(1)
+    public int getMaxPartitionBatchSize()
+    {
+        return maxPartitionBatchSize;
+    }
+
+    @Config("hudi.size-based-split-weights-enabled")
+    @ConfigDescription("Whether to enable size-based split weights to improve performance")
+    public HudiConfig setSizeBasedSplitWeightsEnabled(boolean sizeBasedSplitWeightsEnabled)
+    {
+        this.sizeBasedSplitWeightsEnabled = sizeBasedSplitWeightsEnabled;
+        return this;
+    }
+
+    public boolean isSizeBasedSplitWeightsEnabled()
+    {
+        return sizeBasedSplitWeightsEnabled;
+    }
+
+    @Config("hudi.standard-split-weight-size")
+    @ConfigDescription("The split size corresponding to the standard weight (1.0) "
+            + "when size based split weights are enabled")
+    public HudiConfig setStandardSplitWeightSize(DataSize standardSplitWeightSize)
+    {
+        this.standardSplitWeightSize = standardSplitWeightSize;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getStandardSplitWeightSize()
+    {
+        return standardSplitWeightSize;
+    }
+
+    @Config("hive.minimum-assigned-split-weight")
+    @ConfigDescription("Minimum weight that a split can be assigned when size based split weights are enabled")
+    public HudiConfig setMinimumAssignedSplitWeight(double minimumAssignedSplitWeight)
+    {
+        this.minimumAssignedSplitWeight = minimumAssignedSplitWeight;
+        return this;
+    }
+
+    @DecimalMax("1")
+    @DecimalMin(value = "0", inclusive = false)
+    public double getMinimumAssignedSplitWeight()
+    {
+        return minimumAssignedSplitWeight;
     }
 }

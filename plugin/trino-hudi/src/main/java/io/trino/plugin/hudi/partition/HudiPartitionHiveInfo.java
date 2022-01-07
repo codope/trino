@@ -91,6 +91,26 @@ public class HudiPartitionHiveInfo
     }
 
     @Override
+    public String getComparingKey()
+    {
+        return hivePartitionName;
+    }
+
+    @Override
+    public void loadPartitionInfo(Optional<Partition> partition)
+    {
+        if (partition.isEmpty()) {
+            throw new HoodieIOException(
+                    String.format("Cannot find partition in Hive Metastore: %s", hivePartitionName));
+        }
+        this.relativePartitionPath = FSUtils.getRelativePartitionPath(
+                new Path(table.getStorage().getLocation()),
+                new Path(partition.get().getStorage().getLocation()));
+        this.hivePartitionKeys =
+                HudiUtil.buildPartitionKeys(partitionColumns, partition.get().getValues());
+    }
+
+    @Override
     public String toString()
     {
         StringBuilder stringBuilder = new StringBuilder();
@@ -109,14 +129,6 @@ public class HudiPartitionHiveInfo
     {
         Optional<Partition> partition = hiveMetastore.getPartition(
                 hiveIdentity, table, HiveUtil.toPartitionValues(hivePartitionName));
-        if (partition.isEmpty()) {
-            throw new HoodieIOException(
-                    String.format("Cannot find partition in Hive Metastore: %s", hivePartitionName));
-        }
-        this.relativePartitionPath = FSUtils.getRelativePartitionPath(
-                new Path(table.getStorage().getLocation()),
-                new Path(partition.get().getStorage().getLocation()));
-        this.hivePartitionKeys =
-                HudiUtil.buildPartitionKeys(partitionColumns, partition.get().getValues());
+        loadPartitionInfo(partition);
     }
 }

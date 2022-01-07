@@ -17,6 +17,7 @@ package io.trino.plugin.hudi.query;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
 import org.apache.hadoop.fs.FileStatus;
@@ -32,10 +33,10 @@ public class HudiSnapshotFileListing
     public HudiSnapshotFileListing(
             HoodieMetadataConfig metadataConfig, HoodieEngineContext engineContext,
             HudiTableHandle tableHandle, HoodieTableMetaClient metaClient,
-            HiveMetastore hiveMetastore, HiveIdentity hiveIdentity,
+            HiveMetastore hiveMetastore, Table hiveTable, HiveIdentity hiveIdentity,
             List<HiveColumnHandle> partitionColumnHandles, boolean shouldSkipMetastoreForPartition)
     {
-        super(metadataConfig, engineContext, tableHandle, metaClient, hiveMetastore,
+        super(metadataConfig, engineContext, tableHandle, metaClient, hiveMetastore, hiveTable,
                 hiveIdentity, partitionColumnHandles, shouldSkipMetastoreForPartition);
     }
 

@@ -19,6 +19,7 @@ import io.trino.plugin.hive.authentication.HiveIdentity;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.MetastoreUtil;
+import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
@@ -32,6 +33,8 @@ import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static java.util.Objects.isNull;
 
@@ -42,19 +45,19 @@ public abstract class HudiFileListing
     protected final HoodieTableMetaClient metaClient;
     protected final HudiTableHandle tableHandle;
     protected final HiveMetastore hiveMetastore;
+    protected final Table hiveTable;
     protected final HiveIdentity hiveIdentity;
     protected final SchemaTableName tableName;
     protected final List<HiveColumnHandle> partitionColumnHandles;
     protected final boolean shouldSkipMetastoreForPartition;
     protected HoodieTableFileSystemView fileSystemView;
     protected TupleDomain<String> partitionKeysFilter;
-    protected Table hiveTable;
     protected List<Column> partitionColumns;
 
     public HudiFileListing(
             HoodieMetadataConfig metadataConfig, HoodieEngineContext engineContext,
             HudiTableHandle tableHandle, HoodieTableMetaClient metaClient,
-            HiveMetastore hiveMetastore, HiveIdentity hiveIdentity,
+            HiveMetastore hiveMetastore, Table hiveTable, HiveIdentity hiveIdentity,
             List<HiveColumnHandle> partitionColumnHandles, boolean shouldSkipMetastoreForPartition)
     {
         this.metadataConfig = metadataConfig;
@@ -63,6 +66,7 @@ public abstract class HudiFileListing
         this.tableHandle = tableHandle;
         this.tableName = tableHandle.getSchemaTableName();
         this.hiveMetastore = hiveMetastore;
+        this.hiveTable = hiveTable;
         this.hiveIdentity = hiveIdentity;
         this.partitionColumnHandles = partitionColumnHandles;
         this.shouldSkipMetastoreForPartition = shouldSkipMetastoreForPartition;
@@ -77,6 +81,11 @@ public abstract class HudiFileListing
         if (!fileSystemView.isClosed()) {
             fileSystemView.close();
         }
+    }
+
+    public Map<String, Optional<Partition>> getPartitions(List<String> partitionNames)
+    {
+        return hiveMetastore.getPartitionsByNames(hiveIdentity, hiveTable, partitionNames);
     }
 
     protected void initFileSystemViewAndPredicates()

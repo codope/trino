@@ -20,6 +20,7 @@ import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hudi.HudiSplit;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.HudiUtil;
+import io.trino.plugin.hudi.split.HudiSplitWeightProvider;
 import io.trino.spi.connector.ConnectorSplit;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -42,6 +43,7 @@ public class HudiPartitionSplitGenerator
     private final FileSystem fileSystem;
     private final HoodieTableMetaClient metaClient;
     private final HudiTableHandle tableHandle;
+    private final HudiSplitWeightProvider hudiSplitWeightProvider;
     private final Map<String, HudiPartitionInfo> partitionInfoMap;
     private final ArrayDeque<Pair<FileStatus, String>> hoodieFileStatusQueue;
     private final ArrayDeque<ConnectorSplit> connectorSplitQueue;
@@ -51,6 +53,7 @@ public class HudiPartitionSplitGenerator
             FileSystem fileSystem,
             HoodieTableMetaClient metaClient,
             HudiTableHandle tableHandle,
+            HudiSplitWeightProvider hudiSplitWeightProvider,
             Map<String, HudiPartitionInfo> partitionInfoMap,
             ArrayDeque<Pair<FileStatus, String>> hoodieFileStatusQueue,
             ArrayDeque<ConnectorSplit> connectorSplitQueue)
@@ -58,6 +61,7 @@ public class HudiPartitionSplitGenerator
         this.fileSystem = fileSystem;
         this.metaClient = metaClient;
         this.tableHandle = tableHandle;
+        this.hudiSplitWeightProvider = hudiSplitWeightProvider;
         this.partitionInfoMap = partitionInfoMap;
         this.hoodieFileStatusQueue = hoodieFileStatusQueue;
         this.connectorSplitQueue = connectorSplitQueue;
@@ -94,7 +98,9 @@ public class HudiPartitionSplitGenerator
                                             metaClient.getFs().getLength(fileSplit.getPath()),
                                             ImmutableList.of(),
                                             tableHandle.getRegularPredicates(),
-                                            hivePartitionKeys));
+                                            hivePartitionKeys,
+                                            hudiSplitWeightProvider.weightForSplitSizeInBytes(
+                                                    fileSplit.getLength())));
                                 }
                                 catch (IOException e) {
                                     throw new HoodieIOException(String.format(
@@ -107,7 +113,6 @@ public class HudiPartitionSplitGenerator
                     synchronized (connectorSplitQueue) {
                         connectorSplitQueue.addAll(hudiSplits);
                     }
-                    LOG.debug(String.format("Add %d splits for %s", hudiSplits.size(), fileStatusPartitionPair.getKey().getPath()));
                 }
                 catch (IOException e) {
                     throw new HoodieIOException("Unable to get splits for " + fileStatusPartitionPair.getKey().getPath(), e);

@@ -16,16 +16,24 @@ package io.trino.plugin.hudi.partition;
 
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
+import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.spi.predicate.TupleDomain;
 
 import java.util.List;
+import java.util.Optional;
 
 public abstract class HudiPartitionInfo
 {
     protected final Table table;
     protected final List<HiveColumnHandle> partitionColumnHandles;
     protected final TupleDomain<HiveColumnHandle> constraintSummary;
+
+    // Relative partition path
+    protected String relativePartitionPath;
+    // Hive partition name containing partition column key-value pairs
+    protected String hivePartitionName;
+    protected List<HivePartitionKey> hivePartitionKeys;
 
     public HudiPartitionInfo(
             Table table, List<HiveColumnHandle> partitionColumnHandles,
@@ -36,11 +44,10 @@ public abstract class HudiPartitionInfo
         this.constraintSummary = constraintSummary;
     }
 
-    // Relative partition path
-    protected String relativePartitionPath;
-    // Hive partition name containing partition column key-value pairs
-    protected String hivePartitionName;
-    protected List<HivePartitionKey> hivePartitionKeys;
+    public Table getTable()
+    {
+        return table;
+    }
 
     public abstract String getRelativePartitionPath();
 
@@ -49,4 +56,8 @@ public abstract class HudiPartitionInfo
     public abstract List<HivePartitionKey> getHivePartitionKeys();
 
     public abstract boolean doesMatchPredicates();
+
+    public abstract String getComparingKey();
+
+    public abstract void loadPartitionInfo(Optional<Partition> partition);
 }

@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.spi.HostAddress;
+import io.trino.spi.SplitWeight;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.predicate.TupleDomain;
 
@@ -40,6 +41,7 @@ public class HudiSplit
     private final List<HostAddress> addresses;
     private final TupleDomain<HiveColumnHandle> predicate;
     private final List<HivePartitionKey> partitionKeys;
+    private final SplitWeight splitWeight;
 
     @JsonCreator
     public HudiSplit(
@@ -49,7 +51,8 @@ public class HudiSplit
             @JsonProperty("fileSize") long fileSize,
             @JsonProperty("addresses") List<HostAddress> addresses,
             @JsonProperty("predicate") TupleDomain<HiveColumnHandle> predicate,
-            @JsonProperty("partitionKeys") List<HivePartitionKey> partitionKeys)
+            @JsonProperty("partitionKeys") List<HivePartitionKey> partitionKeys,
+            @JsonProperty("splitWeight") SplitWeight splitWeight)
     {
         checkArgument(start >= 0, "start must be positive");
         checkArgument(length >= 0, "length must be positive");
@@ -62,6 +65,7 @@ public class HudiSplit
         this.addresses = ImmutableList.copyOf(requireNonNull(addresses, "addresses is null"));
         this.predicate = requireNonNull(predicate, "predicate is null");
         this.partitionKeys = ImmutableList.copyOf(requireNonNull(partitionKeys, "partitionKeys is null"));
+        this.splitWeight = requireNonNull(splitWeight, "splitWeight is null");
     }
 
     @Override
@@ -86,6 +90,13 @@ public class HudiSplit
                 .put("length", length)
                 .put("fileSize", fileSize)
                 .build();
+    }
+
+    @JsonProperty
+    @Override
+    public SplitWeight getSplitWeight()
+    {
+        return splitWeight;
     }
 
     @JsonProperty

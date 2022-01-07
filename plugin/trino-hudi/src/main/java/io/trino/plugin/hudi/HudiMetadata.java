@@ -86,6 +86,7 @@ public class HudiMetadata
     private final HiveMetastore metastore;
     private final HdfsEnvironment hdfsEnvironment;
     private final TypeManager typeManager;
+    private Table hiveTable;
 
     public HudiMetadata(HiveMetastore metastore, HdfsEnvironment hdfsEnvironment, TypeManager typeManager)
     {
@@ -111,13 +112,14 @@ public class HudiMetadata
         if (table.isEmpty()) {
             return null;
         }
-        if (!isHudiTable(session, table.get())) {
+        hiveTable = table.get();
+        if (!isHudiTable(session, hiveTable)) {
             throw new TrinoException(HUDI_UNKNOWN_TABLE_TYPE, format("Not a Hudi table: %s", tableName));
         }
         return new HudiTableHandle(
                 tableName.getSchemaName(),
                 tableName.getTableName(),
-                table.get().getStorage().getLocation(),
+                hiveTable.getStorage().getLocation(),
                 HoodieTableType.COPY_ON_WRITE,
                 TupleDomain.all(),
                 TupleDomain.all(),
@@ -152,29 +154,28 @@ public class HudiMetadata
 
     private ConnectorTableMetadata getTableMetadata(ConnectorSession session, SchemaTableName tableName)
     {
-        Table table = metastore.getTable(new HiveIdentity(session), tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(tableName));
-        Function<HiveColumnHandle, ColumnMetadata> metadataGetter = columnMetadataGetter(table);
+        requireNonNull(hiveTable, "hiveTable is null");
+        Function<HiveColumnHandle, ColumnMetadata> metadataGetter = columnMetadataGetter(hiveTable);
         ImmutableList.Builder<ColumnMetadata> columns = ImmutableList.builder();
-        for (HiveColumnHandle columnHandle : hiveColumnHandles(table, typeManager, NANOSECONDS)) {
+        for (HiveColumnHandle columnHandle : hiveColumnHandles(hiveTable, typeManager, NANOSECONDS)) {
             columns.add(metadataGetter.apply(columnHandle));
         }
 
         // External location property
         ImmutableMap.Builder<String, Object> properties = ImmutableMap.builder();
-        if (table.getTableType().equals(EXTERNAL_TABLE.name())) {
-            properties.put(EXTERNAL_LOCATION_PROPERTY, table.getStorage().getLocation());
+        if (hiveTable.getTableType().equals(EXTERNAL_TABLE.name())) {
+            properties.put(EXTERNAL_LOCATION_PROPERTY, hiveTable.getStorage().getLocation());
         }
 
         // Partitioning property
-        List<String> partitionedBy = table.getPartitionColumns().stream()
+        List<String> partitionedBy = hiveTable.getPartitionColumns().stream()
                 .map(Column::getName)
                 .collect(toImmutableList());
         if (!partitionedBy.isEmpty()) {
             properties.put(PARTITIONED_BY_PROPERTY, partitionedBy);
         }
 
-        Optional<String> comment = Optional.ofNullable(table.getParameters().get(TABLE_COMMENT));
+        Optional<String> comment = Optional.ofNullable(hiveTable.getParameters().get(TABLE_COMMENT));
         return new ConnectorTableMetadata(tableName, columns.build(), properties.build(), comment);
     }
 
@@ -187,10 +188,8 @@ public class HudiMetadata
     @Override
     public Map<String, ColumnHandle> getColumnHandles(ConnectorSession session, ConnectorTableHandle tableHandle)
     {
-        SchemaTableName tableName = ((HudiTableHandle) tableHandle).getSchemaTableName();
-        Table table = metastore.getTable(new HiveIdentity(session), tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(tableName));
-        return hiveColumnHandles(table, typeManager, NANOSECONDS).stream()
+        requireNonNull(hiveTable, "hiveTable is null");
+        return hiveColumnHandles(hiveTable, typeManager, NANOSECONDS).stream()
                 .collect(toImmutableMap(HiveColumnHandle::getName, identity()));
     }
 
@@ -264,6 +263,11 @@ public class HudiMetadata
     public HiveMetastore getMetastore()
     {
         return metastore;
+    }
+
+    public Table getTable()
+    {
+        return hiveTable;
     }
 
     public HoodieTableMetaClient getTableMetaClient(ConnectorSession session, Table table)

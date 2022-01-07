@@ -16,6 +16,7 @@ package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
 import io.airlift.json.JsonCodec;
+import io.trino.spi.SplitWeight;
 import io.trino.spi.predicate.TupleDomain;
 import org.testng.annotations.Test;
 
@@ -35,7 +36,8 @@ public class TestHudiSplit
                 440747L,
                 ImmutableList.of(),
                 TupleDomain.all(),
-                ImmutableList.of());
+                ImmutableList.of(),
+                SplitWeight.fromProportion(0.1));
 
         String json = codec.toJson(expectedSplit);
         HudiSplit actualSplit = codec.fromJson(json);
@@ -46,6 +48,6 @@ public class TestHudiSplit
         assertEquals(actualSplit.getStart(), expectedSplit.getStart());
         assertEquals(actualSplit.getLength(), expectedSplit.getLength());
         assertEquals(actualSplit.getFileSize(), expectedSplit.getFileSize());
-        assertEquals(actualSplit.getAddresses(), expectedSplit.getAddresses());
+        assertEquals(actualSplit.getSplitWeight(), expectedSplit.getSplitWeight());
     }
 }
