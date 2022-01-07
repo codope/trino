@@ -77,7 +77,7 @@ public class HudiPartitionInternalInfo
     public boolean doesMatchPredicates()
     {
         Map<String, String> partitionKeyValueMap =
-                hivePartitionKeys.stream().collect(Collectors.toMap(
+                getHivePartitionKeys().stream().collect(Collectors.toMap(
                         HivePartitionKey::getName, HivePartitionKey::getValue));
         List<String> partitionValues = partitionColumns.stream()
                 .map(column -> partitionKeyValueMap.get(column.getName()))
@@ -85,5 +85,20 @@ public class HudiPartitionInternalInfo
         return HudiUtil.doesPartitionMatchPredicates(
                 table.getSchemaTableName(), relativePartitionPath, partitionValues,
                 partitionColumnHandles, constraintSummary);
+    }
+
+    @Override
+    public String toString()
+    {
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append("HudiPartitionInternalInfo{");
+        stringBuilder.append("relativePartitionPath=");
+        stringBuilder.append(relativePartitionPath);
+        if (!isNull(hivePartitionKeys)) {
+            stringBuilder.append(",hivePartitionKeys=");
+            stringBuilder.append(hivePartitionKeys);
+        }
+        stringBuilder.append("}");
+        return stringBuilder.toString();
     }
 }

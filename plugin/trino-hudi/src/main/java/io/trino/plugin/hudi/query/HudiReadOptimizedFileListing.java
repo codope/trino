@@ -87,6 +87,7 @@ public class HudiReadOptimizedFileListing
                 List<String> relativePartitionPathList = partitionColumns.isEmpty()
                         ? Collections.singletonList("")
                         : TimelineUtils.getPartitionsWritten(metaClient.getActiveTimeline());
+                LOG.debug(String.format("Relative partition list: %s", relativePartitionPathList));
                 allPartitionInfoList = relativePartitionPathList.stream()
                         .map(relativePartitionPath ->
                                 HudiPartitionInfoFactory.get(shouldSkipMetastoreForPartition,
@@ -120,6 +121,10 @@ public class HudiReadOptimizedFileListing
                                     hiveTable, hiveMetastore, hiveIdentity))
                     .collect(Collectors.toList());
         }
+
+        LOG.debug(String.format(
+                "All partitions before filtering (shouldSkipMetastoreForPartition: %s): %s",
+                shouldSkipMetastoreForPartition, allPartitionInfoList));
 
         List<HudiPartitionInfo> filteredPartitionInfoList = allPartitionInfoList.stream()
                 .filter(HudiPartitionInfo::doesMatchPredicates)

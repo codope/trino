@@ -214,10 +214,15 @@ public class HudiUtil
             List<HiveColumnHandle> partitionColumns,
             List<Type> partitionColumnTypes)
     {
+        LOG.debug(String.format("parsePartition: %s, %s, %s",
+                partitionValues, partitionColumns, partitionColumnTypes));
         ImmutableMap.Builder<ColumnHandle, NullableValue> builder = ImmutableMap.builder();
         for (int i = 0; i < partitionColumns.size(); i++) {
             HiveColumnHandle column = partitionColumns.get(i);
-            NullableValue parsedValue = parsePartitionValue(dummyPartitionName, partitionValues.get(i), partitionColumnTypes.get(i));
+            LOG.debug(String.format("Parse column %s %s %s",
+                    column.getName(), partitionValues.get(i), partitionColumnTypes.get(i)));
+            NullableValue parsedValue = parsePartitionValue(
+                    dummyPartitionName, partitionValues.get(i), partitionColumnTypes.get(i));
             builder.put(column, parsedValue);
         }
         Map<ColumnHandle, NullableValue> values = builder.build();

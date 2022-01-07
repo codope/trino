@@ -90,6 +90,21 @@ public class HudiPartitionHiveInfo
                 partitionColumnHandles, constraintSummary);
     }
 
+    @Override
+    public String toString()
+    {
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append("HudiPartitionHiveInfo{");
+        stringBuilder.append("hivePartitionName=");
+        stringBuilder.append(hivePartitionName);
+        if (!isNull(hivePartitionKeys)) {
+            stringBuilder.append(",hivePartitionKeys=");
+            stringBuilder.append(hivePartitionKeys);
+        }
+        stringBuilder.append("}");
+        return stringBuilder.toString();
+    }
+
     private void loadPartitionInfoFromHiveMetastore()
     {
         Optional<Partition> partition = hiveMetastore.getPartition(

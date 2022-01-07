@@ -127,9 +127,15 @@ public class HudiPageSourceProvider
 
     private HudiPageSourceBuilder getHudiPageSourceBuilder(HoodieFileFormat hudiFileFormat)
     {
-        pageSourceBuilderMap.computeIfAbsent(hudiFileFormat,
-                format -> HudiPageSourceBuilderFactory.get(
-                        format, hudiConfig, hdfsEnvironment, fileFormatDataSourceStats, timeZone, context));
+        if (!pageSourceBuilderMap.containsKey(hudiFileFormat)) {
+            // HudiPageSourceProvider::createPageSource may be called concurrently
+            // So the below guarantees the construction of HudiPageSourceBuilder once
+            synchronized (pageSourceBuilderMap) {
+                pageSourceBuilderMap.computeIfAbsent(hudiFileFormat,
+                        format -> HudiPageSourceBuilderFactory.get(
+                                format, hudiConfig, hdfsEnvironment, fileFormatDataSourceStats, timeZone, context));
+            }
+        }
         return pageSourceBuilderMap.get(hudiFileFormat);
     }
 }

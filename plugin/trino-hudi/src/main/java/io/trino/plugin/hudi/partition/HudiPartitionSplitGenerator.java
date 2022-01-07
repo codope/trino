@@ -76,12 +76,20 @@ public class HudiPartitionSplitGenerator
             }
             if (fileStatusPartitionPair != null) {
                 try {
+                    LOG.debug(String.format("fileStatusPartitionPair: %s", fileStatusPartitionPair));
                     String relativePartitionPath = fileStatusPartitionPair.getValue();
                     List<HudiSplit> hudiSplits = HudiUtil.getSplits(fileSystem, fileStatusPartitionPair.getKey())
                             .stream()
                             .flatMap(fileSplit -> {
                                 List<HudiSplit> result = new ArrayList<>();
                                 try {
+                                    LOG.debug(String.format("fileSplit: %s", fileSplit));
+                                    LOG.debug(String.format("metaClient.getFs(): %s", metaClient.getFs()));
+                                    LOG.debug(String.format("tableHandle.getRegularPredicates(): %s", tableHandle.getRegularPredicates()));
+
+                                    LOG.debug(String.format("Partition path: %s %s", relativePartitionPath,
+                                            partitionInfoMap.get(relativePartitionPath)));
+
                                     result.add(new HudiSplit(
                                             fileSplit.getPath().toString(),
                                             fileSplit.getStart(),
