@@ -78,6 +78,9 @@ public abstract class HudiFileListing
 
     public void close()
     {
+        if (fileSystemView == null) {
+            return;
+        }
         if (!fileSystemView.isClosed()) {
             fileSystemView.close();
         }
