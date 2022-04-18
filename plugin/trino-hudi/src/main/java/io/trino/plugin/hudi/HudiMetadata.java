@@ -292,7 +292,9 @@ public class HudiMetadata
     {
         String basePath = table.getStorage().getLocation();
         Configuration conf = hdfsEnvironment.getConfiguration(new HdfsEnvironment.HdfsContext(session), new Path(basePath));
-        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+        HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+        metaClient.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
+        return metaClient;
     }
 
     private ConnectorTableMetadata getTableMetadata(SchemaTableName tableName)
