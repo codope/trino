@@ -98,7 +98,6 @@ public final class InternalHudiConnectorFactory
 
             LifeCycleManager lifeCycleManager = injector.getInstance(LifeCycleManager.class);
             HudiTransactionManager transactionManager = injector.getInstance(HudiTransactionManager.class);
-            HudiMetadataFactory metadataFactory = injector.getInstance(HudiMetadataFactory.class);
             ConnectorSplitManager splitManager = injector.getInstance(ConnectorSplitManager.class);
             ConnectorPageSourceProvider connectorPageSource = injector.getInstance(ConnectorPageSourceProvider.class);
             ConnectorNodePartitioningProvider connectorDistributionProvider = injector.getInstance(ConnectorNodePartitioningProvider.class);
