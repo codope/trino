@@ -14,32 +14,23 @@
 
 package io.trino.plugin.hudi.split;
 
-import com.google.common.collect.ImmutableList;
 import io.airlift.concurrent.MoreFutures;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.util.AsyncQueue;
-import io.trino.plugin.hudi.HudiErrorCode;
-import io.trino.plugin.hudi.HudiSplit;
 import io.trino.plugin.hudi.HudiTableHandle;
-import io.trino.plugin.hudi.HudiUtil;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
 import io.trino.plugin.hudi.partition.HudiPartitionInfoLoader;
 import io.trino.plugin.hudi.query.HudiFileListing;
-import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 
-import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.runAsync;
@@ -48,12 +39,10 @@ public class HudiSplitBackgroundLoader
         implements Runnable
 {
     private final ConnectorSession session;
-    private final HudiTableHandle tableHandle;
-    private final HoodieTableMetaClient metaClient;
     private final HudiFileListing hudiFileListing;
     private final AsyncQueue<ConnectorSplit> asyncQueue;
     private final ExecutorService executor;
-    private final HudiSplitWeightProvider hudiSplitWeightProvider;
+    private final HudiSplitFactory hudiSplitFactory;
 
     public HudiSplitBackgroundLoader(
             ConnectorSession session,
@@ -64,13 +53,11 @@ public class HudiSplitBackgroundLoader
             ExecutorService executor,
             HudiSplitWeightProvider hudiSplitWeightProvider)
     {
-        this.session = session;
-        this.tableHandle = tableHandle;
-        this.metaClient = metaClient;
-        this.hudiFileListing = hudiFileListing;
+        this.session = requireNonNull(session, "session is null");
+        this.hudiFileListing = requireNonNull(hudiFileListing, "hudiFileListing is null");
         this.asyncQueue = requireNonNull(asyncQueue, "asyncQueue is null");
         this.executor = requireNonNull(executor, "executor is null");
-        this.hudiSplitWeightProvider = requireNonNull(hudiSplitWeightProvider, "hudiSplitWeightProvider is null");
+        this.hudiSplitFactory = new HudiSplitFactory(tableHandle, hudiSplitWeightProvider, metaClient.getFs());
     }
 
     @Override
@@ -95,32 +82,9 @@ public class HudiSplitBackgroundLoader
             List<HivePartitionKey> partitionKeys = partition.getHivePartitionKeys();
             List<FileStatus> partitionFiles = hudiFileListing.listStatus(partition);
             partitionFiles.stream()
-                    .flatMap(fileStatus -> loadHudiSplits(fileStatus, partitionKeys))
+                    .flatMap(fileStatus -> hudiSplitFactory.createSplits(partitionKeys, fileStatus))
                     .map(asyncQueue::offer)
                     .forEachOrdered(MoreFutures::getFutureValue);
         }, executor);
-    }
-
-    private Stream<HudiSplit> loadHudiSplits(FileStatus fileStatus, List<HivePartitionKey> hivePartitionKeys)
-    {
-        FileSystem fileSystem = metaClient.getFs();
-        final List<FileSplit> splits;
-        try {
-            splits = HudiUtil.getSplits(fileSystem, fileStatus);
-        }
-        catch (IOException e) {
-            throw new TrinoException(HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT, e);
-        }
-
-        return splits.stream()
-                .map(fileSplit -> new HudiSplit(
-                        fileSplit.getPath().toString(),
-                        fileSplit.getStart(),
-                        fileSplit.getLength(),
-                        fileStatus.getLen(),
-                        ImmutableList.of(),
-                        tableHandle.getRegularPredicates(),
-                        hivePartitionKeys,
-                        hudiSplitWeightProvider.weightForSplitSizeInBytes(fileSplit.getLength())));
     }
 }

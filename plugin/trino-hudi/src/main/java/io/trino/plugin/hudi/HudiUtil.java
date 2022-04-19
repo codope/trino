@@ -31,25 +31,17 @@ import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Decimals;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeSignature;
-import org.apache.hadoop.fs.BlockLocation;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.LocatedFileStatus;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
-import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
 import org.apache.hudi.hive.HiveStylePartitionValueExtractor;
 import org.apache.hudi.hive.MultiPartKeysValueExtractor;
 import org.apache.hudi.hive.PartitionValueExtractor;
 import org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor;
 import org.apache.hudi.hive.SlashEncodedHourPartitionValueExtractor;
 
-import java.io.IOException;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -90,7 +82,6 @@ import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
 public class HudiUtil
 {
     private static final Logger log = Logger.get(HudiUtil.class);
-    private static final double SPLIT_SLOP = 1.1;   // 10% slop
 
     private HudiUtil() {}
 
@@ -226,93 +217,6 @@ public class HudiUtil
                     format("Can not parse partition value '%s' of type '%s' for partition column '%s'",
                             partitionValue, partitionDataType, partitionColumnName));
         }
-    }
-
-    public static List<FileSplit> getSplits(FileSystem fs, FileStatus fileStatus)
-            throws IOException
-    {
-        if (fileStatus.isDirectory()) {
-            throw new IOException("Not a file: " + fileStatus.getPath());
-        }
-
-        Path path = fileStatus.getPath();
-        long length = fileStatus.getLen();
-
-        // generate splits
-        List<FileSplit> splits = new ArrayList<>();
-        if (length != 0) {
-            BlockLocation[] blkLocations;
-            if (fileStatus instanceof LocatedFileStatus) {
-                blkLocations = ((LocatedFileStatus) fileStatus).getBlockLocations();
-            }
-            else {
-                blkLocations = fs.getFileBlockLocations(fileStatus, 0, length);
-            }
-            if (isSplitable(path)) {
-                long splitSize = fileStatus.getBlockSize();
-
-                long bytesRemaining = length;
-                while (((double) bytesRemaining) / splitSize > SPLIT_SLOP) {
-                    String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
-                    splits.add(makeSplit(path, length - bytesRemaining, splitSize, splitHosts[0], splitHosts[1]));
-                    bytesRemaining -= splitSize;
-                }
-
-                if (bytesRemaining != 0) {
-                    String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
-                    splits.add(makeSplit(path, length - bytesRemaining, bytesRemaining, splitHosts[0], splitHosts[1]));
-                }
-            }
-            else {
-                String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, 0);
-                splits.add(makeSplit(path, 0, length, splitHosts[0], splitHosts[1]));
-            }
-        }
-        else {
-            //Create empty hosts array for zero length files
-            splits.add(makeSplit(path, 0, length, new String[0]));
-        }
-        return splits;
-    }
-
-    private static boolean isSplitable(Path filename)
-    {
-        return !(filename instanceof PathWithBootstrapFileStatus);
-    }
-
-    private static FileSplit makeSplit(Path file, long start, long length, String[] hosts)
-    {
-        return new FileSplit(file, start, length, hosts);
-    }
-
-    private static FileSplit makeSplit(Path file, long start, long length, String[] hosts, String[] inMemoryHosts)
-    {
-        return new FileSplit(file, start, length, hosts, inMemoryHosts);
-    }
-
-    private static String[][] getSplitHostsAndCachedHosts(BlockLocation[] blkLocations, long offset)
-            throws IOException
-    {
-        int startIndex = getBlockIndex(blkLocations, offset);
-
-        return new String[][] {blkLocations[startIndex].getHosts(),
-                blkLocations[startIndex].getCachedHosts()};
-    }
-
-    private static int getBlockIndex(BlockLocation[] blkLocations, long offset)
-    {
-        for (int i = 0; i < blkLocations.length; i++) {
-            // is the offset inside this block?
-            if ((blkLocations[i].getOffset() <= offset) &&
-                    (offset < blkLocations[i].getOffset() + blkLocations[i].getLength())) {
-                return i;
-            }
-        }
-        BlockLocation last = blkLocations[blkLocations.length - 1];
-        long fileLength = last.getOffset() + last.getLength() - 1;
-        throw new IllegalArgumentException("Offset " + offset +
-                " is outside of file (0.." +
-                fileLength + ")");
     }
 
     public static List<HivePartitionKey> buildPartitionKeys(List<Column> keys, List<String> values)
