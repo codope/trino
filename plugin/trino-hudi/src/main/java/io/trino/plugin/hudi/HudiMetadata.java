@@ -20,7 +20,6 @@ import com.google.common.collect.Sets;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
-import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.acid.AcidSchema;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
@@ -43,7 +42,6 @@ import io.trino.spi.type.TypeManager;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.model.HoodieTableType;
-import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import java.util.List;
 import java.util.Map;
@@ -121,8 +119,7 @@ public class HudiMetadata
                 table.get().getStorage().getLocation(),
                 HoodieTableType.COPY_ON_WRITE,
                 TupleDomain.all(),
-                TupleDomain.all(),
-                Optional.of(getTableMetaClient(session, table.get())));
+                TupleDomain.all());
     }
 
     @Override
@@ -170,11 +167,14 @@ public class HudiMetadata
     @Override
     public Optional<Object> getInfo(ConnectorTableHandle table)
     {
-        return ((HudiTableHandle) table).getPartitions()
-                .map(partitions -> new HudiInputInfo(
-                        partitions.stream()
-                                .map(HivePartition::getPartitionId)
-                                .collect(toImmutableList())));
+        HudiTableHandle hudiTable = (HudiTableHandle) table;
+        return Optional.of(ImmutableMap.of(
+                "table",
+                hudiTable.getTableName(),
+                "basePath",
+                hudiTable.getBasePath(),
+                "type",
+                hudiTable.getTableType()));
     }
 
     @Override
@@ -267,15 +267,6 @@ public class HudiMetadata
             return false;
         }
         return true;
-    }
-
-    private HoodieTableMetaClient getTableMetaClient(ConnectorSession session, Table table)
-    {
-        String basePath = table.getStorage().getLocation();
-        Configuration conf = hdfsEnvironment.getConfiguration(new HdfsEnvironment.HdfsContext(session), new Path(basePath));
-        HoodieTableMetaClient metaClient = HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
-        metaClient.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
-        return metaClient;
     }
 
     private ConnectorTableMetadata getTableMetadata(SchemaTableName tableName)

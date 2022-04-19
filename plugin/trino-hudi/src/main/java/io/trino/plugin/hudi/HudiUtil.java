@@ -31,7 +31,6 @@ import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Decimals;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeSignature;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -41,7 +40,6 @@ import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieFileFormat;
-import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.exception.HoodieIOException;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
@@ -96,11 +94,6 @@ public class HudiUtil
     private static final double SPLIT_SLOP = 1.1;   // 10% slop
 
     private HudiUtil() {}
-
-    public static HoodieTableMetaClient getMetaClient(Configuration conf, String basePath)
-    {
-        return HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
-    }
 
     public static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)
     {

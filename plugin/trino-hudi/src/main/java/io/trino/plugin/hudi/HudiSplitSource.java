@@ -51,7 +51,6 @@ import static io.trino.plugin.hudi.HudiSessionProperties.getStandardSplitWeightS
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeightsEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
-import static io.trino.plugin.hudi.HudiUtil.getMetaClient;
 import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static java.util.concurrent.CompletableFuture.runAsync;
 import static java.util.stream.Collectors.toList;
@@ -76,7 +75,7 @@ public class HudiSplitSource
     {
         boolean metadataEnabled = isHudiMetadataEnabled(session);
         boolean shouldSkipMetastoreForPartition = shouldSkipMetaStoreForPartition(session);
-        HoodieTableMetaClient metaClient = tableHandle.getMetaClient().orElseGet(() -> getMetaClient(conf, tableHandle.getBasePath()));
+        HoodieTableMetaClient metaClient = buildTableMetaClient(conf, tableHandle.getBasePath());
         HoodieEngineContext engineContext = new HoodieLocalEngineContext(conf);
         HoodieMetadataConfig metadataConfig = HoodieMetadataConfig.newBuilder()
                 .enable(metadataEnabled)
@@ -140,6 +139,13 @@ public class HudiSplitSource
     public boolean isFinished()
     {
         return queue.isFinished();
+    }
+
+    private static HoodieTableMetaClient buildTableMetaClient(Configuration conf, String basePath)
+    {
+        HoodieTableMetaClient client = HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+        client.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
+        return client;
     }
 
     private static HudiSplitWeightProvider createSplitWeightProvider(ConnectorSession session)
