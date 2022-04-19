@@ -56,7 +56,6 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -116,48 +115,6 @@ public class HudiUtil
             return HoodieFileFormat.HFILE;
         }
         throw new HoodieIOException("Hoodie InputFormat not implemented for base file of type " + extension);
-    }
-
-    public static HudiPredicates splitPredicate(
-            TupleDomain<ColumnHandle> predicate)
-    {
-        Map<ColumnHandle, Domain> partitionColumnPredicates = new HashMap<>();
-        Map<ColumnHandle, Domain> regularColumnPredicates = new HashMap<>();
-
-        Optional<Map<ColumnHandle, Domain>> domains = predicate.getDomains();
-        domains.ifPresent(columnHandleDomainMap -> columnHandleDomainMap.forEach((key, value) -> {
-            HiveColumnHandle columnHandle = (HiveColumnHandle) key;
-            if (columnHandle.isPartitionKey()) {
-                partitionColumnPredicates.put(key, value);
-            }
-            else {
-                regularColumnPredicates.put(key, value);
-            }
-        }));
-
-        return new HudiPredicates(
-                TupleDomain.withColumnDomains(partitionColumnPredicates),
-                TupleDomain.withColumnDomains(regularColumnPredicates));
-    }
-
-    public static TupleDomain<HiveColumnHandle> mergePredicates(
-            TupleDomain<HiveColumnHandle> predicates1, TupleDomain<HiveColumnHandle> predicates2)
-    {
-        Map<HiveColumnHandle, Domain> newColumnDomains = new HashMap<>();
-        predicates1.getDomains().ifPresent(newColumnDomains::putAll);
-        predicates2.getDomains().ifPresent(domains -> {
-            for (HiveColumnHandle columnHandle : domains.keySet()) {
-                if (newColumnDomains.containsKey(columnHandle)
-                        && !newColumnDomains.get(columnHandle).equals(domains.get(columnHandle))) {
-                    throw new HoodieIOException(format("Conflicting predicates for %s: [%s] and [%s]",
-                            columnHandle, newColumnDomains.get(columnHandle), domains.get(columnHandle)));
-                }
-                else {
-                    newColumnDomains.put(columnHandle, domains.get(columnHandle));
-                }
-            }
-        });
-        return TupleDomain.withColumnDomains(newColumnDomains);
     }
 
     public static boolean doesPartitionMatchPredicates(

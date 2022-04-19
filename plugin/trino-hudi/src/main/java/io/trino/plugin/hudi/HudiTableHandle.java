@@ -22,7 +22,6 @@ import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.TupleDomain;
 import org.apache.hudi.common.model.HoodieTableType;
 
-import static io.trino.plugin.hudi.HudiUtil.mergePredicates;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.util.Objects.requireNonNull;
 
@@ -94,17 +93,17 @@ public class HudiTableHandle
         return schemaTableName(schemaName, tableName);
     }
 
-    HudiTableHandle withPredicates(HudiPredicates predicates)
+    HudiTableHandle withPredicates(
+            TupleDomain<HiveColumnHandle> partitionTupleDomain,
+            TupleDomain<HiveColumnHandle> regularTupleDomain)
     {
         return new HudiTableHandle(
                 schemaName,
                 tableName,
                 basePath,
                 tableType,
-                mergePredicates(partitionPredicates,
-                        predicates.getPartitionColumnPredicates().transformKeys(HiveColumnHandle.class::cast)),
-                mergePredicates(regularPredicates,
-                        predicates.getRegularColumnPredicates().transformKeys(HiveColumnHandle.class::cast)));
+                partitionPredicates.intersect(partitionTupleDomain),
+                regularPredicates.intersect(regularTupleDomain));
     }
 
     @Override

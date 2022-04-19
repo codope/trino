@@ -66,7 +66,6 @@ import static io.trino.plugin.hive.util.HiveUtil.columnExtraInfo;
 import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
 import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
-import static io.trino.plugin.hudi.HudiUtil.splitPredicate;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.lang.String.format;
 import static java.util.Collections.singletonList;
@@ -133,8 +132,10 @@ public class HudiMetadata
     public Optional<ConstraintApplicationResult<ConnectorTableHandle>> applyFilter(ConnectorSession session, ConnectorTableHandle tableHandle, Constraint constraint)
     {
         HudiTableHandle handle = (HudiTableHandle) tableHandle;
-        HudiPredicates predicates = splitPredicate(constraint.getSummary());
-        HudiTableHandle newHudiTableHandle = handle.withPredicates(predicates);
+        HudiPredicates predicates = HudiPredicates.from(constraint.getSummary());
+        HudiTableHandle newHudiTableHandle = handle.withPredicates(
+                predicates.getPartitionColumnPredicates(),
+                predicates.getRegularColumnPredicates());
 
         if (handle.getPartitionPredicates().equals(newHudiTableHandle.getPartitionPredicates())
                 && handle.getRegularPredicates().equals(newHudiTableHandle.getRegularPredicates())) {
