@@ -59,8 +59,8 @@ import static java.util.stream.Collectors.toList;
 public class HudiSplitSource
         implements ConnectorSplitSource
 {
-    private final HudiFileListing hudiFileListing;
     private final AsyncQueue<ConnectorSplit> queue;
+
     private TrinoException trinoException;
 
     public HudiSplitSource(
@@ -85,7 +85,7 @@ public class HudiSplitSource
                 .map(column -> partitionColumnHandleMap.get(column.getName())).collect(toList());
 
         // TODO: fetch the query mode from config / query context
-        this.hudiFileListing = HudiFileListingFactory.get(
+        HudiFileListing hudiFileListing = HudiFileListingFactory.get(
                 HudiQueryMode.READ_OPTIMIZED,
                 metadataConfig,
                 engineContext,

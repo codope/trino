@@ -32,11 +32,11 @@ import io.trino.spi.connector.ConnectorMetadata;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableHandle;
 import io.trino.spi.connector.ConnectorTableMetadata;
-import io.trino.spi.connector.ConnectorTableProperties;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.ConstraintApplicationResult;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.connector.SchemaTablePrefix;
+import io.trino.spi.connector.TableColumnsMetadata;
 import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.TypeManager;
@@ -49,6 +49,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
@@ -140,7 +141,7 @@ public class HudiMetadata
 
         if (handle.getPartitionPredicates().equals(newHudiTableHandle.getPartitionPredicates())
                 && handle.getRegularPredicates().equals(newHudiTableHandle.getRegularPredicates())) {
-            log.info("No new predicates to apply");
+            log.debug("No new predicates to apply");
             return Optional.empty();
         }
 
@@ -148,12 +149,6 @@ public class HudiMetadata
                 newHudiTableHandle,
                 newHudiTableHandle.getRegularPredicates().transformKeys(ColumnHandle.class::cast),
                 false));
-    }
-
-    @Override
-    public ConnectorTableProperties getTableProperties(ConnectorSession session, ConnectorTableHandle tableHandle)
-    {
-        return new ConnectorTableProperties();
     }
 
     @Override
@@ -191,38 +186,24 @@ public class HudiMetadata
                 tableNames.add(schemaTableName(schemaName, tableName));
             }
         }
-
-        tableNames.addAll(listMaterializedViews(session, optionalSchemaName));
         return tableNames.build();
     }
 
     @Override
-    public Map<SchemaTableName, List<ColumnMetadata>> listTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
+    public Stream<TableColumnsMetadata> streamTableColumns(ConnectorSession session, SchemaTablePrefix prefix)
     {
         List<SchemaTableName> tables = prefix.getTable()
                 .map(ignored -> singletonList(prefix.toSchemaTableName()))
                 .orElseGet(() -> listTables(session, prefix.getSchema()));
-
-        ImmutableMap.Builder<SchemaTableName, List<ColumnMetadata>> columns = ImmutableMap.builder();
-        for (SchemaTableName table : tables) {
-            try {
-                columns.put(table, getTableMetadata(table).getColumns());
-            }
-            catch (TableNotFoundException e) {
-                // table disappeared during listing operation
-            }
-        }
-        return columns.buildOrThrow();
+        return tables.stream().map(table -> {
+            List<ColumnMetadata> columns = getTableMetadata(table).getColumns();
+            return TableColumnsMetadata.forTable(table, columns);
+        });
     }
 
     HiveMetastore getMetastore()
     {
         return metastore;
-    }
-
-    void rollback()
-    {
-        // TODO: cleanup open transaction when write will be supported
     }
 
     private static Function<HiveColumnHandle, ColumnMetadata> columnMetadataGetter(Table table)

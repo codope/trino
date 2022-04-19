@@ -37,10 +37,8 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
 
-import static io.airlift.concurrent.Threads.daemonThreadsNamed;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.util.Objects.requireNonNull;
-import static java.util.concurrent.Executors.newCachedThreadPool;
 import static java.util.function.Function.identity;
 
 public class HudiSplitManager
@@ -56,13 +54,14 @@ public class HudiSplitManager
     public HudiSplitManager(
             HudiTransactionManager transactionManager,
             HdfsEnvironment hdfsEnvironment,
-            HudiConfig hudiConfig)
+            HudiConfig hudiConfig,
+            @ForHudiSplitManager ExecutorService executor)
     {
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
+        this.executor = requireNonNull(executor, "executor is null");
         this.maxSplitsPerSecond = requireNonNull(hudiConfig, "hudiConfig is null").getMaxSplitsPerSecond();
         this.maxOutstandingSplits = hudiConfig.getMaxOutstandingSplits();
-        this.executor = newCachedThreadPool(daemonThreadsNamed("hudi-split-%d"));
     }
 
     @PreDestroy

@@ -110,7 +110,6 @@ public final class InternalHudiConnectorFactory
             return new HudiConnector(
                     lifeCycleManager,
                     transactionManager,
-                    metadataFactory,
                     new ClassLoaderSafeConnectorSplitManager(splitManager, classLoader),
                     new ClassLoaderSafeConnectorPageSourceProvider(connectorPageSource, classLoader),
                     new ClassLoaderSafeNodePartitioningProvider(connectorDistributionProvider, classLoader),

@@ -57,8 +57,14 @@ public class HudiTableHandle
             @JsonProperty("partitionPredicates") TupleDomain<HiveColumnHandle> partitionPredicates,
             @JsonProperty("regularPredicates") TupleDomain<HiveColumnHandle> regularPredicates)
     {
-        this(schemaName, tableName, basePath, tableType, partitionPredicates,
-                regularPredicates, Optional.empty(), Optional.empty());
+        this(schemaName,
+                tableName,
+                basePath,
+                tableType,
+                partitionPredicates,
+                regularPredicates,
+                Optional.empty(),
+                Optional.empty());
     }
 
     public HudiTableHandle(
@@ -70,8 +76,14 @@ public class HudiTableHandle
             TupleDomain<HiveColumnHandle> regularPredicates,
             Optional<HoodieTableMetaClient> metaClient)
     {
-        this(schemaName, tableName, basePath, tableType, partitionPredicates,
-                regularPredicates, Optional.empty(), metaClient);
+        this(schemaName,
+                tableName,
+                basePath,
+                tableType,
+                partitionPredicates,
+                regularPredicates,
+                Optional.empty(),
+                metaClient);
     }
 
     public HudiTableHandle(

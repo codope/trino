@@ -16,9 +16,9 @@ package io.trino.plugin.hudi.split;
 
 import com.google.common.collect.ImmutableList;
 import io.airlift.concurrent.MoreFutures;
-import io.trino.plugin.hive.HiveErrorCode;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.util.AsyncQueue;
+import io.trino.plugin.hudi.HudiErrorCode;
 import io.trino.plugin.hudi.HudiSplit;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.HudiUtil;
@@ -109,7 +109,7 @@ public class HudiSplitBackgroundLoader
             splits = HudiUtil.getSplits(fileSystem, fileStatus);
         }
         catch (IOException e) {
-            throw new TrinoException(HiveErrorCode.HIVE_CANNOT_OPEN_SPLIT, e);
+            throw new TrinoException(HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT, e);
         }
 
         return splits.stream()
