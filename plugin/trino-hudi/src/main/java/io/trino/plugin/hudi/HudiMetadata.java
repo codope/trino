@@ -169,13 +169,7 @@ public class HudiMetadata
     public Optional<Object> getInfo(ConnectorTableHandle table)
     {
         HudiTableHandle hudiTable = (HudiTableHandle) table;
-        return Optional.of(ImmutableMap.of(
-                "table",
-                hudiTable.getTableName(),
-                "basePath",
-                hudiTable.getBasePath(),
-                "type",
-                hudiTable.getTableType()));
+        return Optional.of(HudiTableInfo.from(hudiTable));
     }
 
     @Override
