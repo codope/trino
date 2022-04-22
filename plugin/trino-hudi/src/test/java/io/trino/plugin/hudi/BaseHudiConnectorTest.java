@@ -68,8 +68,10 @@ public abstract class BaseHudiConnectorTest
             case SUPPORTS_INSERT:
             case SUPPORTS_MULTI_STATEMENT_WRITES:
                 return false;
+
+            default:
+                return super.hasBehavior(connectorBehavior);
         }
-        return super.hasBehavior(connectorBehavior);
     }
 
     protected abstract HoodieTableType getHoodieTableType();

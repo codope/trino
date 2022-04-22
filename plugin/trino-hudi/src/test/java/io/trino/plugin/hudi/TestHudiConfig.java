@@ -34,6 +34,7 @@ public class TestHudiConfig
     {
         assertRecordedDefaults(recordDefaults(HudiConfig.class)
                 .setBaseFileFormat(PARQUET.name())
+                .setColumnsToHide(null)
                 .setMetadataEnabled(false)
                 .setSkipMetaStoreForPartition(false)
                 .setUseParquetColumnNames(true)
@@ -53,6 +54,7 @@ public class TestHudiConfig
     {
         Map<String, String> properties = ImmutableMap.<String, String>builder()
                 .put("hudi.base-file-format", "ORC")
+                .put("hudi.columns-to-hide", "_hoodie_record_key")
                 .put("hudi.metadata-enabled", "true")
                 .put("hudi.skip-metastore-for-partition", "true")
                 .put("hudi.use-parquet-column-names", "false")
@@ -69,6 +71,7 @@ public class TestHudiConfig
 
         HudiConfig expected = new HudiConfig()
                 .setBaseFileFormat(ORC.name())
+                .setColumnsToHide("_hoodie_record_key")
                 .setMetadataEnabled(true)
                 .setSkipMetaStoreForPartition(true)
                 .setUseParquetColumnNames(false)

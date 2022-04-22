@@ -41,6 +41,8 @@ public class HudiQueryRunners
     public static final CatalogSchemaName HUDI_TESTS = new CatalogSchemaName("hudi", "tests");
     public static final CatalogSchemaName TPCH_TINY = new CatalogSchemaName("tpch", "tiny");
 
+    private HudiQueryRunners() {}
+
     public static DistributedQueryRunner createHudiQueryRunner(
             Map<String, String> serverConfig,
             Map<String, String> connectorConfig,
@@ -79,7 +81,7 @@ public class HudiQueryRunners
             queryRunner.createCatalog("tpch", TPCH_TINY.getCatalogName());
 
             String dataDir = queryRunner.getCoordinator().getBaseDataDir().resolve("data").toString();
-            Configuration configuration = new Configuration();
+            Configuration configuration = new Configuration(false);
             HudiTpchLoader loader = new HudiTpchLoader(
                     tableType,
                     queryRunner,

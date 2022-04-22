@@ -153,8 +153,8 @@ public class HudiTpchLoader
     private Table createMetastoreTable(TpchTable<?> table)
     {
         String tablePath = "file://" + getTablePath(table);
-        List<Column> columns = Stream.of(HUDI_META_COLUMNS, createMetastoreColumns(table)).
-                flatMap(Collection::stream)
+        List<Column> columns = Stream.of(HUDI_META_COLUMNS, createMetastoreColumns(table))
+                .flatMap(Collection::stream)
                 .collect(toUnmodifiableList());
         // TODO: create right format
         StorageFormat storageFormat = StorageFormat.fromHiveStorageFormat(HiveStorageFormat.PARQUET);
