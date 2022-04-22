@@ -12,14 +12,18 @@
  * limitations under the License.
  */
 
-package io.trino.plugin.hudi.testing;
+package io.trino.plugin.hudi;
 
-import org.apache.hudi.common.model.HoodieAvroPayload;
-import org.apache.hudi.common.model.HoodieRecord;
+import org.apache.hudi.common.model.HoodieTableType;
 
-import java.util.List;
+import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
 
-public interface RecordConverter
+public class TestHudiMergeOnReadConnectorTest
+        extends BaseHudiConnectorTest
 {
-    HoodieRecord<HoodieAvroPayload> toRecord(List<Object> row);
+    @Override
+    protected HoodieTableType getHoodieTableType()
+    {
+        return MERGE_ON_READ;
+    }
 }
