@@ -20,16 +20,14 @@ import io.airlift.log.Logging;
 import io.trino.Session;
 import io.trino.plugin.hive.metastore.Database;
 import io.trino.plugin.hive.metastore.HiveMetastore;
-import io.trino.plugin.tpch.TpchPlugin;
+import io.trino.plugin.hudi.testing.HudiDataLoaderFactory;
+import io.trino.plugin.hudi.testing.ResourceHudiDataLoader;
 import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.spi.security.PrincipalType;
 import io.trino.testing.DistributedQueryRunner;
-import io.trino.tpch.TpchTable;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hudi.common.model.HoodieTableType;
 
 import java.io.File;
-import java.util.List;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 
@@ -39,15 +37,13 @@ import static io.trino.testing.TestingSession.testSessionBuilder;
 public class HudiQueryRunners
 {
     public static final CatalogSchemaName HUDI_TESTS = new CatalogSchemaName("hudi", "tests");
-    public static final CatalogSchemaName TPCH_TINY = new CatalogSchemaName("tpch", "tiny");
 
     private HudiQueryRunners() {}
 
     public static DistributedQueryRunner createHudiQueryRunner(
             Map<String, String> serverConfig,
             Map<String, String> connectorConfig,
-            HoodieTableType tableType,
-            List<TpchTable<?>> tpchTablesToLoad)
+            HudiDataLoaderFactory dataLoaderFactory)
             throws Exception
     {
         Session session = testSessionBuilder()
@@ -59,7 +55,8 @@ public class HudiQueryRunners
                 .setExtraProperties(serverConfig)
                 .build();
 
-        File catalogDir = queryRunner.getCoordinator().getBaseDataDir().resolve("catalog").toFile();
+        Path coordinatorBaseDir = queryRunner.getCoordinator().getBaseDataDir();
+        File catalogDir = coordinatorBaseDir.resolve("catalog").toFile();
         HiveMetastore metastore = createTestingFileHiveMetastore(catalogDir);
 
         // create testing database
@@ -76,25 +73,8 @@ public class HudiQueryRunners
                 HUDI_TESTS.getCatalogName(),
                 connectorConfig);
 
-        if (!tpchTablesToLoad.isEmpty()) {
-            queryRunner.installPlugin(new TpchPlugin());
-            queryRunner.createCatalog("tpch", TPCH_TINY.getCatalogName());
-
-            String dataDir = queryRunner.getCoordinator().getBaseDataDir().resolve("data").toString();
-            Configuration configuration = new Configuration(false);
-            HudiTpchLoader loader = new HudiTpchLoader(
-                    tableType,
-                    queryRunner,
-                    configuration,
-                    dataDir,
-                    metastore,
-                    TPCH_TINY,
-                    HUDI_TESTS);
-            for (TpchTable<?> tpchTable : tpchTablesToLoad) {
-                loader.load(tpchTable);
-            }
-        }
-
+        String dataDir = coordinatorBaseDir.resolve("data").toString();
+        dataLoaderFactory.create(queryRunner, metastore, HUDI_TESTS, dataDir).load();
         return queryRunner;
     }
 
@@ -109,8 +89,7 @@ public class HudiQueryRunners
             queryRunner = createHudiQueryRunner(
                     ImmutableMap.of("http-server.http.port", "8080"),
                     ImmutableMap.of(),
-                    HoodieTableType.COPY_ON_WRITE,
-                    TpchTable.getTables());
+                    ResourceHudiDataLoader.factory());
         }
         catch (Throwable t) {
             log.error(t);

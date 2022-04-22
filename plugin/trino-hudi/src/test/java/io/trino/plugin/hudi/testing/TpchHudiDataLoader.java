@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 
-package io.trino.plugin.hudi;
+package io.trino.plugin.hudi.testing;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -23,6 +23,7 @@ import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.StorageFormat;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.tpch.TpchPlugin;
 import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.testing.MaterializedResult;
 import io.trino.testing.MaterializedRow;
@@ -76,12 +77,14 @@ import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toUnmodifiableList;
 import static org.apache.hadoop.hive.metastore.TableType.EXTERNAL_TABLE;
 
-public class HudiTpchLoader
+public class TpchHudiDataLoader
+        implements HudiDataLoader
 {
-    static final String FIELD_UUID = "_uuid";
+    public static final String FIELD_UUID = "_uuid";
+    private static final CatalogSchemaName TPCH_TINY = new CatalogSchemaName("tpch", "tiny");
 
     private static final String PARTITION_PATH = "";
-    private static final Logger log = Logger.get(HudiTpchLoader.class);
+    private static final Logger log = Logger.get(TpchHudiDataLoader.class);
     private static final List<Column> HUDI_META_COLUMNS = ImmutableList.of(
             new Column("_hoodie_commit_time", HIVE_STRING, Optional.empty()),
             new Column("_hoodie_commit_seqno", HIVE_STRING, Optional.empty()),
@@ -97,7 +100,24 @@ public class HudiTpchLoader
     private final CatalogSchemaName tpchCatalogSchema;
     private final CatalogSchemaName hudiCatalogSchema;
 
-    public HudiTpchLoader(
+    public static HudiDataLoaderFactory factory(HoodieTableType tableType)
+    {
+        return (queryRunner, metastore, hudiCatalogSchema, dataDir) -> {
+            queryRunner.installPlugin(new TpchPlugin());
+            queryRunner.createCatalog("tpch", TPCH_TINY.getCatalogName(), ImmutableMap.of());
+
+            return new TpchHudiDataLoader(
+                    tableType,
+                    queryRunner,
+                    new Configuration(false),
+                    dataDir,
+                    metastore,
+                    TPCH_TINY,
+                    hudiCatalogSchema);
+        };
+    }
+
+    private TpchHudiDataLoader(
             HoodieTableType tableType,
             QueryRunner queryRunner,
             Configuration conf,
@@ -115,7 +135,15 @@ public class HudiTpchLoader
         this.hudiCatalogSchema = requireNonNull(hudiCatalogSchema, "hudiCatalogSchema is null");
     }
 
-    public void load(TpchTable<?> table)
+    @Override
+    public void load()
+    {
+        for (TpchTable<?> table : TpchTable.getTables()) {
+            load(table);
+        }
+    }
+
+    private void load(TpchTable<?> table)
     {
         HoodieJavaWriteClient<HoodieAvroPayload> writeClient = createWriteClient(table);
         RecordConverter recordConverter = createRecordConverter(table);
@@ -223,11 +251,10 @@ public class HudiTpchLoader
                 .collect(toUnmodifiableList());
         List<Function<Object, Object>> columnConverters = columns.stream()
                 .map(TpchColumn::getType)
-                .map(HudiTpchLoader::avroEncoderOf)
+                .map(TpchHudiDataLoader::avroEncoderOf)
                 .collect(toUnmodifiableList());
 
         return row -> {
-            TpchTable<?> t = table;
             checkArgument(row.size() == columnNum);
 
             // Create a GenericRecord
