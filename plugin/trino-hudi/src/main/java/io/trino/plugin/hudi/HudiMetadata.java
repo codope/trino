@@ -45,7 +45,9 @@ import org.apache.hudi.common.model.HoodieTableType;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -59,19 +61,18 @@ import static io.trino.plugin.hive.HiveColumnHandle.PARTITION_COLUMN_NAME;
 import static io.trino.plugin.hive.HiveColumnHandle.PATH_COLUMN_NAME;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.HiveMetadata.TABLE_COMMENT;
-import static io.trino.plugin.hive.HiveTableProperties.EXTERNAL_LOCATION_PROPERTY;
 import static io.trino.plugin.hive.HiveTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
 import static io.trino.plugin.hive.util.HiveUtil.columnExtraInfo;
 import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
 import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
+import static io.trino.plugin.hudi.HudiSessionProperties.getColumnsToHide;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.lang.String.format;
 import static java.util.Collections.singletonList;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
-import static org.apache.hadoop.hive.metastore.TableType.EXTERNAL_TABLE;
 import static org.apache.hadoop.hive.ql.io.AcidUtils.isFullAcidTable;
 import static org.apache.hudi.common.fs.FSUtils.getFs;
 import static org.apache.hudi.common.table.HoodieTableMetaClient.METAFOLDER_NAME;
@@ -125,7 +126,7 @@ public class HudiMetadata
     public ConnectorTableMetadata getTableMetadata(ConnectorSession session, ConnectorTableHandle table)
     {
         HudiTableHandle hudiTableHandle = (HudiTableHandle) table;
-        return getTableMetadata(hudiTableHandle.getSchemaTableName());
+        return getTableMetadata(hudiTableHandle.getSchemaTableName(), getColumnsToHide(session));
     }
 
     @Override
@@ -190,10 +191,9 @@ public class HudiMetadata
         List<SchemaTableName> tables = prefix.getTable()
                 .map(ignored -> singletonList(prefix.toSchemaTableName()))
                 .orElseGet(() -> listTables(session, prefix.getSchema()));
-        return tables.stream().map(table -> {
-            List<ColumnMetadata> columns = getTableMetadata(table).getColumns();
-            return TableColumnsMetadata.forTable(table, columns);
-        });
+        return tables.stream()
+                .map(table -> getTableColumnMetadata(session, table).orElse(null))
+                .filter(Objects::nonNull);
     }
 
     HiveMetastore getMetastore()
@@ -264,21 +264,32 @@ public class HudiMetadata
         return true;
     }
 
-    private ConnectorTableMetadata getTableMetadata(SchemaTableName tableName)
+    private Optional<TableColumnsMetadata> getTableColumnMetadata(ConnectorSession session, SchemaTableName table)
+    {
+        try {
+            List<ColumnMetadata> columns = getTableMetadata(table, getColumnsToHide(session)).getColumns();
+            return Optional.of(TableColumnsMetadata.forTable(table, columns));
+        }
+        catch (TableNotFoundException ignore) {
+            return Optional.empty();
+        }
+    }
+
+    private ConnectorTableMetadata getTableMetadata(SchemaTableName tableName, Set<String> columnsToHide)
+            throws TableNotFoundException
     {
         Table table = metastore.getTable(tableName.getSchemaName(), tableName.getTableName())
-                .orElseThrow(() -> new TableNotFoundException(schemaTableName(tableName.getSchemaName(), tableName.getTableName())));
+                .orElseThrow(() -> new TableNotFoundException(tableName));
         Function<HiveColumnHandle, ColumnMetadata> metadataGetter = columnMetadataGetter(table);
         ImmutableList.Builder<ColumnMetadata> columns = ImmutableList.builder();
         for (HiveColumnHandle columnHandle : hiveColumnHandles(table, typeManager, NANOSECONDS)) {
+            if (columnsToHide.contains(columnHandle.getName())) {
+                continue;
+            }
             columns.add(metadataGetter.apply(columnHandle));
         }
 
-        // External location property
         ImmutableMap.Builder<String, Object> properties = ImmutableMap.builder();
-        if (table.getTableType().equals(EXTERNAL_TABLE.name())) {
-            properties.put(EXTERNAL_LOCATION_PROPERTY, table.getStorage().getLocation());
-        }
 
         // Partitioning property
         List<String> partitionedBy = table.getPartitionColumns().stream()

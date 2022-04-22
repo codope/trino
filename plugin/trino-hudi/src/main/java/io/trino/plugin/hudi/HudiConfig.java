@@ -29,6 +29,7 @@ import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 public class HudiConfig
 {
     private String baseFileFormat = PARQUET.name();
+    private String columnsToHide;
     private boolean metadataEnabled;
     private boolean shouldSkipMetaStoreForPartition;
     private boolean shouldUseParquetColumnNames = true;
@@ -52,6 +53,18 @@ public class HudiConfig
     public HudiConfig setBaseFileFormat(String baseFileFormat)
     {
         this.baseFileFormat = baseFileFormat;
+        return this;
+    }
+
+    public String getColumnsToHide()
+    {
+        return columnsToHide;
+    }
+
+    @Config("hudi.columns-to-hide")
+    public HudiConfig setColumnsToHide(String columnsToHide)
+    {
+        this.columnsToHide = columnsToHide;
         return this;
     }
 

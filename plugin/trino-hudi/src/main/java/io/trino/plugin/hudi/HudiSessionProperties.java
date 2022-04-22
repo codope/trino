@@ -14,6 +14,7 @@
 
 package io.trino.plugin.hudi;
 
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import io.airlift.units.DataSize;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
@@ -25,7 +26,9 @@ import org.apache.hudi.common.model.HoodieFileFormat;
 import javax.inject.Inject;
 
 import java.util.List;
+import java.util.Set;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static io.trino.plugin.base.session.PropertyMetadataUtil.dataSizeProperty;
 import static io.trino.spi.StandardErrorCode.INVALID_SESSION_PROPERTY;
 import static io.trino.spi.session.PropertyMetadata.booleanProperty;
@@ -33,11 +36,13 @@ import static io.trino.spi.session.PropertyMetadata.doubleProperty;
 import static io.trino.spi.session.PropertyMetadata.integerProperty;
 import static io.trino.spi.session.PropertyMetadata.stringProperty;
 import static java.lang.String.format;
+import static java.util.stream.Collectors.toUnmodifiableSet;
 
 public class HudiSessionProperties
         implements SessionPropertiesProvider
 {
     private static final String BASE_FILE_FORMAT = "file_format";
+    private static final String COLUMNS_TO_HIDE = "columns_to_hide";
     private static final String METADATA_ENABLED = "metadata_enabled";
     private static final String SKIP_METASTORE_FOR_PARTITION = "skip_metastore_for_partition";
     private static final String USE_PARQUET_COLUMN_NAMES = "use_parquet_column_names";
@@ -49,6 +54,8 @@ public class HudiSessionProperties
     private static final String STANDARD_SPLIT_WEIGHT_SIZE = "standard_split_weight_size";
     private static final String MINIMUM_ASSIGNED_SPLIT_WEIGHT = "minimum_assigned_split_weight";
 
+    private static final Splitter COMMA_SPLITTER = Splitter.on(",").omitEmptyStrings().trimResults();
+
     private final List<PropertyMetadata<?>> sessionProperties;
 
     @Inject
@@ -59,6 +66,11 @@ public class HudiSessionProperties
                         BASE_FILE_FORMAT,
                         "Currently, only Parquet is supported",
                         hudiConfig.getBaseFileFormat(),
+                        false),
+                stringProperty(
+                        COLUMNS_TO_HIDE,
+                        "Columns to hide",
+                        hudiConfig.getColumnsToHide(),
                         false),
                 booleanProperty(
                         METADATA_ENABLED,
@@ -128,6 +140,12 @@ public class HudiSessionProperties
     public static HoodieFileFormat getBaseFileFormat(ConnectorSession session)
     {
         return session.getProperty(BASE_FILE_FORMAT, HoodieFileFormat.class);
+    }
+
+    public static Set<String> getColumnsToHide(ConnectorSession session)
+    {
+        String columnsToHide = session.getProperty(COLUMNS_TO_HIDE, String.class);
+        return COMMA_SPLITTER.splitToStream(nullToEmpty(columnsToHide)).collect(toUnmodifiableSet());
     }
 
     public static boolean isHudiMetadataEnabled(ConnectorSession session)
