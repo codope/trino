@@ -96,7 +96,6 @@ public class ResourceHudiDataLoader
             createTable(
                     basePath.resolve(tableName),
                     tableName,
-                    table.getTableType(),
                     table.getDataColumns(),
                     table.getPartitionColumns(),
                     table.getPartitions());
@@ -106,7 +105,6 @@ public class ResourceHudiDataLoader
     private void createTable(
             Path tablePath,
             String tableName,
-            HoodieTableType tableType,
             List<Column> dataColumns,
             List<Column> partitionColumns,
             Map<String, String> partitions)
