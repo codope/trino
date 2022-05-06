@@ -40,6 +40,7 @@ import org.apache.hudi.client.HoodieJavaWriteClient;
 import org.apache.hudi.client.common.HoodieJavaEngineContext;
 import org.apache.hudi.common.bootstrap.index.NoOpBootstrapIndex;
 import org.apache.hudi.common.model.HoodieAvroPayload;
+import org.apache.hudi.common.model.HoodieAvroRecord;
 import org.apache.hudi.common.model.HoodieKey;
 import org.apache.hudi.common.model.HoodieRecord;
 import org.apache.hudi.common.model.HoodieTableType;
@@ -269,7 +270,14 @@ public class TpchHudiDataLoader
             // wrap to a HoodieRecord
             HoodieKey key = new HoodieKey(uuid, PARTITION_PATH);
             HoodieAvroPayload data = new HoodieAvroPayload(Option.of(record));
-            return new HoodieRecord<>(key, data);
+            return new HoodieRecord<>(key, data)
+            {
+                @Override
+                public HoodieRecord<HoodieAvroPayload> newInstance()
+                {
+                    return new HoodieAvroRecord<>(key, data, null);
+                }
+            };
         };
     }
 
