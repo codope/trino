@@ -16,11 +16,8 @@ package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Sets;
-import io.airlift.log.Logger;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
-import io.trino.plugin.hive.acid.AcidSchema;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
@@ -53,17 +50,10 @@ import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.common.collect.Iterables.concat;
-import static io.trino.plugin.hive.HiveColumnHandle.BUCKET_COLUMN_NAME;
-import static io.trino.plugin.hive.HiveColumnHandle.FILE_MODIFIED_TIME_COLUMN_NAME;
-import static io.trino.plugin.hive.HiveColumnHandle.FILE_SIZE_COLUMN_NAME;
-import static io.trino.plugin.hive.HiveColumnHandle.PARTITION_COLUMN_NAME;
-import static io.trino.plugin.hive.HiveColumnHandle.PATH_COLUMN_NAME;
-import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.HiveMetadata.TABLE_COMMENT;
 import static io.trino.plugin.hive.HiveTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
-import static io.trino.plugin.hive.util.HiveUtil.columnExtraInfo;
+import static io.trino.plugin.hive.util.HiveUtil.columnMetadataGetter;
 import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
 import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
@@ -73,7 +63,6 @@ import static java.lang.String.format;
 import static java.util.Collections.singletonList;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
-import static org.apache.hadoop.hive.ql.io.AcidUtils.isFullAcidTable;
 import static org.apache.hudi.common.fs.FSUtils.getFs;
 import static org.apache.hudi.common.table.HoodieTableMetaClient.METAFOLDER_NAME;
 import static org.apache.hudi.exception.TableNotFoundException.checkTableValidity;
@@ -81,7 +70,6 @@ import static org.apache.hudi.exception.TableNotFoundException.checkTableValidit
 public class HudiMetadata
         implements ConnectorMetadata
 {
-    private static final Logger log = Logger.get(HudiMetadata.class);
     private final HiveMetastore metastore;
     private final HdfsEnvironment hdfsEnvironment;
     private final TypeManager typeManager;
@@ -134,13 +122,12 @@ public class HudiMetadata
     {
         HudiTableHandle handle = (HudiTableHandle) tableHandle;
         HudiPredicates predicates = HudiPredicates.from(constraint.getSummary());
-        HudiTableHandle newHudiTableHandle = handle.withPredicates(
+        HudiTableHandle newHudiTableHandle = handle.applyPredicates(
                 predicates.getPartitionColumnPredicates(),
                 predicates.getRegularColumnPredicates());
 
         if (handle.getPartitionPredicates().equals(newHudiTableHandle.getPartitionPredicates())
                 && handle.getRegularPredicates().equals(newHudiTableHandle.getRegularPredicates())) {
-            log.debug("No new predicates to apply");
             return Optional.empty();
         }
 
@@ -201,56 +188,6 @@ public class HudiMetadata
         return metastore;
     }
 
-    private static Function<HiveColumnHandle, ColumnMetadata> columnMetadataGetter(Table table)
-    {
-        ImmutableList.Builder<String> columnNames = ImmutableList.builder();
-        table.getPartitionColumns().stream().map(Column::getName).forEach(columnNames::add);
-        table.getDataColumns().stream().map(Column::getName).forEach(columnNames::add);
-        List<String> allColumnNames = columnNames.build();
-        if (allColumnNames.size() > Sets.newHashSet(allColumnNames).size()) {
-            throw new TrinoException(HIVE_INVALID_METADATA,
-                    format("Hive metadata for table %s is invalid: Table descriptor contains duplicate columns", table.getTableName()));
-        }
-
-        List<Column> tableColumns = table.getDataColumns();
-        ImmutableMap.Builder<String, Optional<String>> builder = ImmutableMap.builder();
-        for (Column field : concat(tableColumns, table.getPartitionColumns())) {
-            if (field.getComment().isPresent() && !field.getComment().get().equals("from deserializer")) {
-                builder.put(field.getName(), field.getComment());
-            }
-            else {
-                builder.put(field.getName(), Optional.empty());
-            }
-        }
-
-        // add hidden columns
-        builder.put(PATH_COLUMN_NAME, Optional.empty());
-        if (table.getStorage().getBucketProperty().isPresent()) {
-            builder.put(BUCKET_COLUMN_NAME, Optional.empty());
-        }
-        builder.put(FILE_SIZE_COLUMN_NAME, Optional.empty());
-        builder.put(FILE_MODIFIED_TIME_COLUMN_NAME, Optional.empty());
-        if (!table.getPartitionColumns().isEmpty()) {
-            builder.put(PARTITION_COLUMN_NAME, Optional.empty());
-        }
-
-        if (isFullAcidTable(table.getParameters())) {
-            for (String name : AcidSchema.ACID_COLUMN_NAMES) {
-                builder.put(name, Optional.empty());
-            }
-        }
-
-        Map<String, Optional<String>> columnComment = builder.buildOrThrow();
-
-        return handle -> ColumnMetadata.builder()
-                .setName(handle.getName())
-                .setType(handle.getType())
-                .setComment(columnComment.get(handle.getName()))
-                .setExtraInfo(Optional.ofNullable(columnExtraInfo(handle.isPartitionKey())))
-                .setHidden(handle.isHidden())
-                .build();
-    }
-
     private boolean isHudiTable(ConnectorSession session, Table table)
     {
         String basePath = table.getStorage().getLocation();
@@ -258,7 +195,7 @@ public class HudiMetadata
         try {
             checkTableValidity(getFs(basePath, conf), new Path(basePath), new Path(basePath, METAFOLDER_NAME));
         }
-        catch (Exception e) {
+        catch (org.apache.hudi.exception.TableNotFoundException e) {
             return false;
         }
         return true;

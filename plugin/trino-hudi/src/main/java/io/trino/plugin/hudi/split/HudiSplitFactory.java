@@ -33,11 +33,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 public class HudiSplitFactory
 {
-    private static final double SPLIT_SLOP = 1.1;   // 10% slop
+    private static final double SPLIT_SLOP = 1.1;   // 10% slop/overflow allowed in bytes per split while generating splits
 
     private final HudiTableHandle hudiTableHandle;
     private final HudiSplitWeightProvider hudiSplitWeightProvider;
@@ -57,7 +58,7 @@ public class HudiSplitFactory
     {
         final List<FileSplit> splits;
         try {
-            splits = getSplits(fileSystem, fileStatus);
+            splits = createSplits(fileStatus);
         }
         catch (IOException e) {
             throw new TrinoException(HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT, e);
@@ -72,10 +73,10 @@ public class HudiSplitFactory
                         ImmutableList.of(),
                         hudiTableHandle.getRegularPredicates(),
                         partitionKeys,
-                        hudiSplitWeightProvider.weightForSplitSizeInBytes(fileSplit.getLength())));
+                        hudiSplitWeightProvider.calculateSplitWeight(fileSplit.getLength())));
     }
 
-    private static List<FileSplit> getSplits(FileSystem fs, FileStatus fileStatus)
+    private List<FileSplit> createSplits(FileStatus fileStatus)
             throws IOException
     {
         if (fileStatus.isDirectory()) {
@@ -85,39 +86,35 @@ public class HudiSplitFactory
         Path path = fileStatus.getPath();
         long length = fileStatus.getLen();
 
-        // generate splits
-        List<FileSplit> splits = new ArrayList<>();
-        if (length != 0) {
-            BlockLocation[] blkLocations;
-            if (fileStatus instanceof LocatedFileStatus) {
-                blkLocations = ((LocatedFileStatus) fileStatus).getBlockLocations();
-            }
-            else {
-                blkLocations = fs.getFileBlockLocations(fileStatus, 0, length);
-            }
-            if (isSplitable(path)) {
-                long splitSize = fileStatus.getBlockSize();
+        if (length == 0) {
+            return ImmutableList.of(new FileSplit(path, 0, length, new String[0]));
+        }
 
-                long bytesRemaining = length;
-                while (((double) bytesRemaining) / splitSize > SPLIT_SLOP) {
-                    String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
-                    splits.add(makeSplit(path, length - bytesRemaining, splitSize, splitHosts[0], splitHosts[1]));
-                    bytesRemaining -= splitSize;
-                }
-
-                if (bytesRemaining != 0) {
-                    String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
-                    splits.add(makeSplit(path, length - bytesRemaining, bytesRemaining, splitHosts[0], splitHosts[1]));
-                }
-            }
-            else {
-                String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, 0);
-                splits.add(makeSplit(path, 0, length, splitHosts[0], splitHosts[1]));
-            }
+        BlockLocation[] blkLocations;
+        if (fileStatus instanceof LocatedFileStatus) {
+            blkLocations = ((LocatedFileStatus) fileStatus).getBlockLocations();
         }
         else {
-            //Create empty hosts array for zero length files
-            splits.add(makeSplit(path, 0, length, new String[0]));
+            blkLocations = fileSystem.getFileBlockLocations(fileStatus, 0, length);
+        }
+
+        if (!isSplitable(path)) {
+            String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, 0);
+            return ImmutableList.of(new FileSplit(path, 0, length, splitHosts[0], splitHosts[1]));
+        }
+
+        List<FileSplit> splits = new ArrayList<>();
+        long splitSize = fileStatus.getBlockSize();
+
+        long bytesRemaining = length;
+        while (((double) bytesRemaining) / splitSize > SPLIT_SLOP) {
+            String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
+            splits.add(new FileSplit(path, length - bytesRemaining, splitSize, splitHosts[0], splitHosts[1]));
+            bytesRemaining -= splitSize;
+        }
+        if (bytesRemaining != 0) {
+            String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
+            splits.add(new FileSplit(path, length - bytesRemaining, bytesRemaining, splitHosts[0], splitHosts[1]));
         }
         return splits;
     }
@@ -125,16 +122,6 @@ public class HudiSplitFactory
     private static boolean isSplitable(Path filename)
     {
         return !(filename instanceof PathWithBootstrapFileStatus);
-    }
-
-    private static FileSplit makeSplit(Path file, long start, long length, String[] hosts)
-    {
-        return new FileSplit(file, start, length, hosts);
-    }
-
-    private static FileSplit makeSplit(Path file, long start, long length, String[] hosts, String[] inMemoryHosts)
-    {
-        return new FileSplit(file, start, length, hosts, inMemoryHosts);
     }
 
     private static String[][] getSplitHostsAndCachedHosts(BlockLocation[] blkLocations, long offset)
@@ -149,16 +136,18 @@ public class HudiSplitFactory
     private static int getBlockIndex(BlockLocation[] blkLocations, long offset)
     {
         for (int i = 0; i < blkLocations.length; i++) {
-            // is the offset inside this block?
-            if ((blkLocations[i].getOffset() <= offset) &&
-                    (offset < blkLocations[i].getOffset() + blkLocations[i].getLength())) {
+            if (isOffsetInBlock(blkLocations[i], offset)) {
                 return i;
             }
         }
         BlockLocation last = blkLocations[blkLocations.length - 1];
         long fileLength = last.getOffset() + last.getLength() - 1;
-        throw new IllegalArgumentException("Offset " + offset +
-                " is outside of file (0.." +
-                fileLength + ")");
+        throw new IllegalArgumentException(format("Offset %d is outside of file (0..%d)", offset, fileLength));
+    }
+
+    private static boolean isOffsetInBlock(BlockLocation blkLocation, long offset)
+    {
+        return (blkLocation.getOffset() <= offset) &&
+                (offset < blkLocation.getOffset() + blkLocation.getLength());
     }
 }

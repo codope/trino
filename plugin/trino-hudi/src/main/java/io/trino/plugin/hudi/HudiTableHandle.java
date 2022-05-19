@@ -93,7 +93,7 @@ public class HudiTableHandle
         return schemaTableName(schemaName, tableName);
     }
 
-    HudiTableHandle withPredicates(
+    HudiTableHandle applyPredicates(
             TupleDomain<HiveColumnHandle> partitionTupleDomain,
             TupleDomain<HiveColumnHandle> regularTupleDomain)
     {

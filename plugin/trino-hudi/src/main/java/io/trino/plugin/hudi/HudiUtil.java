@@ -22,15 +22,12 @@ import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.HivePartitionManager;
 import io.trino.plugin.hive.metastore.Column;
-import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.NullableValue;
 import io.trino.spi.predicate.TupleDomain;
-import io.trino.spi.type.Decimals;
 import io.trino.spi.type.Type;
-import io.trino.spi.type.TypeSignature;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieFileFormat;
@@ -42,46 +39,27 @@ import org.apache.hudi.hive.PartitionValueExtractor;
 import org.apache.hudi.hive.SlashEncodedDayPartitionValueExtractor;
 import org.apache.hudi.hive.SlashEncodedHourPartitionValueExtractor;
 
-import java.sql.Timestamp;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static io.airlift.slice.Slices.utf8Slice;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.util.HiveUtil.checkCondition;
 import static io.trino.plugin.hive.util.HiveUtil.parsePartitionValue;
-import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_PARTITION_VALUE;
-import static io.trino.spi.type.StandardTypes.BIGINT;
-import static io.trino.spi.type.StandardTypes.BOOLEAN;
-import static io.trino.spi.type.StandardTypes.DATE;
-import static io.trino.spi.type.StandardTypes.DECIMAL;
-import static io.trino.spi.type.StandardTypes.DOUBLE;
-import static io.trino.spi.type.StandardTypes.INTEGER;
-import static io.trino.spi.type.StandardTypes.REAL;
-import static io.trino.spi.type.StandardTypes.SMALLINT;
-import static io.trino.spi.type.StandardTypes.TIMESTAMP;
-import static io.trino.spi.type.StandardTypes.TINYINT;
-import static io.trino.spi.type.StandardTypes.VARBINARY;
-import static io.trino.spi.type.StandardTypes.VARCHAR;
-import static java.lang.Double.parseDouble;
-import static java.lang.Float.floatToRawIntBits;
-import static java.lang.Float.parseFloat;
-import static java.lang.Long.parseLong;
-import static java.lang.String.format;
-import static java.util.Objects.isNull;
 import static java.util.stream.Collectors.toList;
-import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
 
-public class HudiUtil
+public final class HudiUtil
 {
     private static final Logger log = Logger.get(HudiUtil.class);
+    private static final List<PartitionValueExtractor> PARTITION_VALUE_EXTRACTORS;
+
+    static {
+        PARTITION_VALUE_EXTRACTORS = ImmutableList.<PartitionValueExtractor>builder()
+                .add(new HiveStylePartitionValueExtractor())
+                .add(new MultiPartKeysValueExtractor())
+                .add(new SlashEncodedDayPartitionValueExtractor())
+                .add(new SlashEncodedHourPartitionValueExtractor())
+                .build();
+    }
 
     private HudiUtil() {}
 
@@ -108,7 +86,7 @@ public class HudiUtil
         throw new HoodieIOException("Hoodie InputFormat not implemented for base file of type " + extension);
     }
 
-    public static boolean doesPartitionMatchPredicates(
+    public static boolean partitionMatchesPredicates(
             SchemaTableName tableName,
             String hivePartitionName,
             List<HiveColumnHandle> partitionColumnHandles,
@@ -123,7 +101,7 @@ public class HudiUtil
         return partitionMatches(partitionColumnHandles, constraintSummary, partition);
     }
 
-    public static boolean doesPartitionMatchPredicates(
+    public static boolean partitionMatchesPredicates(
             SchemaTableName tableName,
             String relativePartitionPath,
             List<String> partitionValues,
@@ -139,9 +117,9 @@ public class HudiUtil
         return partitionMatches(partitionColumnHandles, constraintSummary, partition);
     }
 
-    public static HivePartition parsePartition(
+    private static HivePartition parsePartition(
             SchemaTableName tableName,
-            String dummyPartitionName,
+            String partitionName,
             List<String> partitionValues,
             List<HiveColumnHandle> partitionColumns,
             List<Type> partitionColumnTypes)
@@ -150,11 +128,11 @@ public class HudiUtil
         for (int i = 0; i < partitionColumns.size(); i++) {
             HiveColumnHandle column = partitionColumns.get(i);
             NullableValue parsedValue = parsePartitionValue(
-                    dummyPartitionName, partitionValues.get(i), partitionColumnTypes.get(i));
+                    partitionName, partitionValues.get(i), partitionColumnTypes.get(i));
             builder.put(column, parsedValue);
         }
         Map<ColumnHandle, NullableValue> values = builder.buildOrThrow();
-        return new HivePartition(tableName, dummyPartitionName, values);
+        return new HivePartition(tableName, partitionName, values);
     }
 
     public static boolean partitionMatches(List<HiveColumnHandle> partitionColumns, TupleDomain<HiveColumnHandle> constraintSummary, HivePartition partition)
@@ -174,51 +152,6 @@ public class HudiUtil
         return true;
     }
 
-    public static Optional<Object> convertPartitionValue(
-            String partitionColumnName,
-            String partitionValue,
-            TypeSignature partitionDataType)
-    {
-        if (isNull(partitionValue)) {
-            return Optional.empty();
-        }
-
-        String baseType = partitionDataType.getBase();
-        try {
-            switch (baseType) {
-                case TINYINT:
-                case SMALLINT:
-                case INTEGER:
-                case BIGINT:
-                    return Optional.of(parseLong(partitionValue));
-                case REAL:
-                    return Optional.of((long) floatToRawIntBits(parseFloat(partitionValue)));
-                case DOUBLE:
-                    return Optional.of(parseDouble(partitionValue));
-                case VARCHAR:
-                case VARBINARY:
-                    return Optional.of(utf8Slice(partitionValue));
-                case DATE:
-                    return Optional.of(LocalDate.parse(partitionValue, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay());
-                case TIMESTAMP:
-                    return Optional.of(Timestamp.valueOf(partitionValue).toLocalDateTime().toEpochSecond(ZoneOffset.UTC) * 1_000);
-                case BOOLEAN:
-                    checkArgument(partitionValue.equalsIgnoreCase("true") || partitionValue.equalsIgnoreCase("false"));
-                    return Optional.of(Boolean.valueOf(partitionValue));
-                case DECIMAL:
-                    return Optional.of(Decimals.parse(partitionValue).getObject());
-                default:
-                    throw new TrinoException(HUDI_INVALID_PARTITION_VALUE,
-                            format("Unsupported data type '%s' for partition column %s", partitionDataType, partitionColumnName));
-            }
-        }
-        catch (IllegalArgumentException | DateTimeParseException e) {
-            throw new TrinoException(HUDI_INVALID_PARTITION_VALUE,
-                    format("Can not parse partition value '%s' of type '%s' for partition column '%s'",
-                            partitionValue, partitionDataType, partitionColumnName));
-        }
-    }
-
     public static List<HivePartitionKey> buildPartitionKeys(List<Column> keys, List<String> values)
     {
         checkCondition(keys.size() == values.size(), HIVE_INVALID_METADATA,
@@ -233,61 +166,30 @@ public class HudiUtil
         return partitionKeys.build();
     }
 
-    public static List<String> buildPartitionValues(String partitionNames)
-    {
-        ImmutableList.Builder<String> values = ImmutableList.builder();
-        String[] parts = partitionNames.split("=");
-        if (parts.length == 1) {
-            values.add(unescapePathName(partitionNames));
-            return values.build();
-        }
-        if (parts.length == 2) {
-            values.add(unescapePathName(parts[1]));
-            return values.build();
-        }
-        for (int i = 1; i < parts.length; i++) {
-            String val = parts[i];
-            int j = val.lastIndexOf('/');
-            if (j == -1) {
-                values.add(unescapePathName(val));
-            }
-            else {
-                values.add(unescapePathName(val.substring(0, j)));
-            }
-        }
-        return values.build();
-    }
-
     public static PartitionValueExtractor inferPartitionValueExtractor(
-            String relativePartitionPath, List<String> expectedPartitionValues)
+            String relativePartitionPath,
+            List<String> expectedPartitionValues)
             throws HoodieIOException
     {
-        // The order of extractors to try should not be changed
-        List<PartitionValueExtractor> partitionValueExtractorList = new ArrayList<>();
-        partitionValueExtractorList.add(new HiveStylePartitionValueExtractor());
-        partitionValueExtractorList.add(new MultiPartKeysValueExtractor());
-        partitionValueExtractorList.add(new SlashEncodedDayPartitionValueExtractor());
-        partitionValueExtractorList.add(new SlashEncodedHourPartitionValueExtractor());
-
-        for (PartitionValueExtractor partitionValueExtractor : partitionValueExtractorList) {
+        for (PartitionValueExtractor partitionValueExtractor : PARTITION_VALUE_EXTRACTORS) {
             try {
                 List<String> extractedPartitionValues =
                         partitionValueExtractor.extractPartitionValuesInPath(relativePartitionPath);
                 if (extractedPartitionValues.equals(expectedPartitionValues)) {
-                    log.debug(format("Inferred %s to be the partition value extractor",
-                            partitionValueExtractor.getClass().getName()));
+                    log.debug("Inferred %s to be the partition value extractor",
+                            partitionValueExtractor.getClass().getName());
                     return partitionValueExtractor;
                 }
                 else {
-                    log.debug(format("Cannot use partition value extractor %s due to value mismatch " +
-                                    "(expected: %s, actual: %s), trying the next option ...",
-                            partitionValueExtractor.getClass().getName(), expectedPartitionValues,
-                            extractedPartitionValues));
+                    log.debug("Cannot use partition value extractor %s due to value mismatch (expected: %s, actual: %s), trying the next option ...",
+                            partitionValueExtractor.getClass().getName(),
+                            expectedPartitionValues,
+                            extractedPartitionValues);
                 }
             }
             catch (IllegalArgumentException e) {
-                log.debug(format("Cannot use partition value extractor %s, trying the next option ...",
-                        partitionValueExtractor.getClass().getName()));
+                log.debug("Cannot use partition value extractor %s, trying the next option ...",
+                        partitionValueExtractor.getClass().getName());
             }
         }
 

@@ -14,6 +14,8 @@
 
 package io.trino.plugin.hudi;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.spi.Page;
 import io.trino.spi.TrinoException;
@@ -41,9 +43,9 @@ public class HudiPageSource
             Map<String, Block> partitionBlocks,
             ConnectorPageSource dataPageSource)
     {
-        this.columnHandles = requireNonNull(columnHandles, "columnHandles is null");
+        this.columnHandles = ImmutableList.copyOf(requireNonNull(columnHandles, "columnHandles is null"));
+        this.partitionBlocks = ImmutableMap.copyOf(requireNonNull(partitionBlocks, "partitionBlocks is null"));
         this.dataPageSource = requireNonNull(dataPageSource, "dataPageSource is null");
-        this.partitionBlocks = requireNonNull(partitionBlocks, "partitionBlocks is null");
     }
 
     @Override

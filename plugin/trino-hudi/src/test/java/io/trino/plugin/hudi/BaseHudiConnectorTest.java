@@ -33,7 +33,7 @@ public abstract class BaseHudiConnectorTest
     protected QueryRunner createQueryRunner()
             throws Exception
     {
-        return HudiQueryRunners.createHudiQueryRunner(
+        return HudiQueryRunner.createHudiQueryRunner(
                 ImmutableMap.of(),
                 ImmutableMap.of("hudi.columns-to-hide", columnsToHide()),
                 TpchHudiDataLoader.factory(getHoodieTableType()));

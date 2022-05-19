@@ -16,7 +16,7 @@ package io.trino.plugin.hudi.partition;
 
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.metastore.Partition;
-import io.trino.plugin.hudi.query.HudiFileListing;
+import io.trino.plugin.hudi.query.HudiFileLister;
 import io.trino.spi.connector.ConnectorSession;
 import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.exception.HoodieIOException;
@@ -38,7 +38,7 @@ public class HudiPartitionInfoLoader
         implements Runnable
 {
     private static final Logger log = Logger.get(HudiPartitionInfoLoader.class);
-    private final HudiFileListing hudiFileListing;
+    private final HudiFileLister hudiFileLister;
     private final int minPartitionBatchSize;
     private final int maxPartitionBatchSize;
     private final Deque<HudiPartitionInfo> partitionQueue;
@@ -46,10 +46,10 @@ public class HudiPartitionInfoLoader
 
     public HudiPartitionInfoLoader(
             ConnectorSession session,
-            HudiFileListing hudiFileListing,
+            HudiFileLister hudiFileLister,
             Deque<HudiPartitionInfo> partitionQueue)
     {
-        this.hudiFileListing = hudiFileListing;
+        this.hudiFileLister = hudiFileLister;
         this.partitionQueue = partitionQueue;
         this.minPartitionBatchSize = getMinPartitionBatchSize(session);
         this.maxPartitionBatchSize = getMaxPartitionBatchSize(session);
@@ -60,7 +60,7 @@ public class HudiPartitionInfoLoader
     public void run()
     {
         HoodieTimer timer = new HoodieTimer().startTimer();
-        List<HudiPartitionInfo> hudiPartitionInfoList = hudiFileListing.getPartitionsToScan().stream()
+        List<HudiPartitionInfo> hudiPartitionInfoList = hudiFileLister.getPartitionsToScan().stream()
                 .sorted(Comparator.comparing(HudiPartitionInfo::getComparingKey)).collect(Collectors.toList());
 
         // empty partitioned table
@@ -76,8 +76,7 @@ public class HudiPartitionInfoLoader
             return;
         }
 
-        boolean shouldUseHiveMetastore =
-                !hudiPartitionInfoList.isEmpty() && hudiPartitionInfoList.get(0) instanceof HudiPartitionHiveInfo;
+        boolean shouldUseHiveMetastore = hudiPartitionInfoList.get(0) instanceof HiveHudiPartitionInfo;
         Iterator<HudiPartitionInfo> iterator = hudiPartitionInfoList.iterator();
         while (iterator.hasNext()) {
             int batchSize = updateBatchSize();
@@ -90,7 +89,7 @@ public class HudiPartitionInfoLoader
             if (!partitionInfoBatch.isEmpty()) {
                 if (shouldUseHiveMetastore) {
                     Map<String, Optional<Partition>> partitions =
-                            hudiFileListing.getPartitions(partitionInfoBatch.stream()
+                            hudiFileLister.getPartitions(partitionInfoBatch.stream()
                                     .map(HudiPartitionInfo::getHivePartitionName)
                                     .collect(Collectors.toList()));
                     partitionInfoBatch

@@ -23,7 +23,6 @@ import io.airlift.bootstrap.LifeCycleManager;
 import io.airlift.event.client.EventModule;
 import io.airlift.json.JsonModule;
 import io.trino.plugin.base.CatalogName;
-import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorAccessControl;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorPageSourceProvider;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitManager;
 import io.trino.plugin.base.classloader.ClassLoaderSafeNodePartitioningProvider;
@@ -68,13 +67,6 @@ public class HudiConnectorFactory
         this.metastore = requireNonNull(metastore, "metastore is null");
     }
 
-    // public HudiConnectorFactory(String name, Class<? extends Module> module)
-    // {
-    //     checkArgument(!isNullOrEmpty(name), "name is null or empty");
-    //     this.name = name;
-    //     this.module = requireNonNull(module, "module is null");
-    // }
-
     @Override
     public String getName()
     {
@@ -87,33 +79,6 @@ public class HudiConnectorFactory
         return createConnector(catalogName, config, context, metastore);
     }
 
-    // public Connector createLegacy(String catalogName, Map<String, String> config, ConnectorContext context)
-    // {
-    //     ClassLoader classLoader = context.duplicatePluginClassLoader();
-    //     try {
-    //         Object moduleInstance = classLoader.loadClass(module.getName()).getConstructor().newInstance();
-    //         Class<?> moduleClass = classLoader.loadClass(Module.class.getName());
-    //         return (Connector) classLoader.loadClass(InternalHudiConnectorFactory.class.getName())
-    //                 .getMethod("createConnector", String.class, Map.class, ConnectorContext.class, moduleClass)
-    //                 .invoke(null, catalogName, config, context, moduleInstance);
-    //     }
-    //     catch (InvocationTargetException e) {
-    //         Throwable targetException = e.getTargetException();
-    //         throwIfUnchecked(targetException);
-    //         throw new RuntimeException(targetException);
-    //     }
-    //     catch (ReflectiveOperationException e) {
-    //         throw new RuntimeException(e);
-    //     }
-    // }
-    //
-    // public static class EmptyModule
-    //         implements Module
-    // {
-    //     @Override
-    //     public void configure(Binder binder) {}
-    // }
-
     public static Connector createConnector(
             String catalogName,
             Map<String, String> config,
@@ -121,7 +86,7 @@ public class HudiConnectorFactory
             Optional<HiveMetastore> metastore)
     {
         requireNonNull(config, "config is null");
-        ClassLoader classLoader = InternalHudiConnectorFactory.class.getClassLoader();
+        ClassLoader classLoader = HudiConnectorFactory.class.getClassLoader();
         try (ThreadContextClassLoader ignored = new ThreadContextClassLoader(classLoader)) {
             Bootstrap app = new Bootstrap(
                     new EventModule(),
@@ -155,8 +120,7 @@ public class HudiConnectorFactory
             ConnectorNodePartitioningProvider connectorDistributionProvider = injector.getInstance(ConnectorNodePartitioningProvider.class);
             Set<SessionPropertiesProvider> sessionPropertiesProviders = injector.getInstance(Key.get(new TypeLiteral<Set<SessionPropertiesProvider>>() {}));
             HudiTableProperties hudiTableProperties = injector.getInstance(HudiTableProperties.class);
-            Optional<ConnectorAccessControl> hudiAccessControl = injector.getInstance(Key.get(new TypeLiteral<Optional<ConnectorAccessControl>>() {}))
-                    .map(accessControl -> new ClassLoaderSafeConnectorAccessControl(accessControl, classLoader));
+            Optional<ConnectorAccessControl> hudiAccessControl = injector.getInstance(Key.get(new TypeLiteral<Optional<ConnectorAccessControl>>() {}));
 
             return new HudiConnector(
                     lifeCycleManager,

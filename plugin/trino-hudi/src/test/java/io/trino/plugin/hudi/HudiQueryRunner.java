@@ -34,11 +34,11 @@ import java.util.Optional;
 import static io.trino.plugin.hive.metastore.file.FileHiveMetastore.createTestingFileHiveMetastore;
 import static io.trino.testing.TestingSession.testSessionBuilder;
 
-public class HudiQueryRunners
+public final class HudiQueryRunner
 {
     public static final CatalogSchemaName HUDI_TESTS = new CatalogSchemaName("hudi", "tests");
 
-    private HudiQueryRunners() {}
+    private HudiQueryRunner() {}
 
     public static DistributedQueryRunner createHudiQueryRunner(
             Map<String, String> serverConfig,
@@ -82,7 +82,7 @@ public class HudiQueryRunners
             throws InterruptedException
     {
         Logging.initialize();
-        Logger log = Logger.get(HudiQueryRunners.class);
+        Logger log = Logger.get(HudiQueryRunner.class);
 
         DistributedQueryRunner queryRunner = null;
         try {

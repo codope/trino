@@ -56,7 +56,7 @@ public class HudiSplit
     {
         checkArgument(start >= 0, "start must be positive");
         checkArgument(length >= 0, "length must be positive");
-        checkArgument(fileSize >= 0, "fileSize must be positive");
+        checkArgument(start + length <= fileSize, "fileSize must be at least start + length");
 
         this.path = requireNonNull(path, "path is null");
         this.start = start;

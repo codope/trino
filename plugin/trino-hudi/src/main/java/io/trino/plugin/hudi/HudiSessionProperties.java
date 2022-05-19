@@ -79,8 +79,7 @@ public class HudiSessionProperties
                         false),
                 booleanProperty(
                         SKIP_METASTORE_FOR_PARTITION,
-                        "Whether to skip metastore for partition info. " +
-                                "If enabled, then the partition info is fetched using Hudi's partition extractor and relative partition path.",
+                        "If enabled, then the partition info is fetched using Hudi's partition extractor and relative partition path.",
                         hudiConfig.getSkipMetaStoreForPartition(),
                         false),
                 booleanProperty(
@@ -100,28 +99,27 @@ public class HudiSessionProperties
                         false),
                 integerProperty(
                         MIN_PARTITION_BATCH_SIZE,
-                        "Minimum partition batch size",
+                        "Minimum number of partitions returned in a single batch.",
                         hudiConfig.getMinPartitionBatchSize(),
                         false),
                 integerProperty(
                         MAX_PARTITION_BATCH_SIZE,
-                        "Maximum partition batch size",
+                        "Maximum number of partitions returned in a single batch.",
                         hudiConfig.getMaxPartitionBatchSize(),
                         false),
                 booleanProperty(
                         SIZE_BASED_SPLIT_WEIGHTS_ENABLED,
-                        "Size-based splitting ensures that each batch of splits has enough data to process. Enabled by default.",
+                        format("If enabled, size-based splitting ensures that each batch of splits has enough data to process as defined by %s", STANDARD_SPLIT_WEIGHT_SIZE),
                         hudiConfig.isSizeBasedSplitWeightsEnabled(),
                         false),
                 dataSizeProperty(
                         STANDARD_SPLIT_WEIGHT_SIZE,
-                        "The split size corresponding to the standard weight (1.0) "
-                                + "when size based split weights are enabled",
+                        "The split size corresponding to the standard weight (1.0) when size-based split weights are enabled",
                         hudiConfig.getStandardSplitWeightSize(),
                         false),
                 doubleProperty(
                         MINIMUM_ASSIGNED_SPLIT_WEIGHT,
-                        "Minimum assigned split weight when size based split weights are enabled",
+                        "Minimum assigned split weight when size-based split weights are enabled",
                         hudiConfig.getMinimumAssignedSplitWeight(),
                         value -> {
                             if (!Double.isFinite(value) || value <= 0 || value > 1) {

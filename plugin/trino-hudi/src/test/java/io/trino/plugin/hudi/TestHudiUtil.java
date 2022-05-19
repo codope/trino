@@ -29,8 +29,8 @@ import java.util.Properties;
 
 import static io.trino.plugin.hive.HiveStorageFormat.PARQUET;
 import static io.trino.plugin.hive.util.HiveUtil.getInputFormat;
-import static io.trino.plugin.hudi.HudiUtil.buildPartitionValues;
 import static io.trino.plugin.hudi.HudiUtil.isHudiParquetInputFormat;
+import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
 import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.FILE_INPUT_FORMAT;
 import static org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_LIB;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
@@ -87,5 +87,30 @@ public class TestHudiUtil
     {
         List<String> actual = buildPartitionValues(partitionName);
         assertEquals(actual, expected);
+    }
+
+    private static List<String> buildPartitionValues(String partitionNames)
+    {
+        ImmutableList.Builder<String> values = ImmutableList.builder();
+        String[] parts = partitionNames.split("=");
+        if (parts.length == 1) {
+            values.add(unescapePathName(partitionNames));
+            return values.build();
+        }
+        if (parts.length == 2) {
+            values.add(unescapePathName(parts[1]));
+            return values.build();
+        }
+        for (int i = 1; i < parts.length; i++) {
+            String val = parts[i];
+            int j = val.lastIndexOf('/');
+            if (j == -1) {
+                values.add(unescapePathName(val));
+            }
+            else {
+                values.add(unescapePathName(val.substring(0, j)));
+            }
+        }
+        return values.build();
     }
 }

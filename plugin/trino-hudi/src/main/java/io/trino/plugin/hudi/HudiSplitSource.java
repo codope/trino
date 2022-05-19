@@ -21,8 +21,7 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.AsyncQueue;
 import io.trino.plugin.hive.util.ThrottledAsyncQueue;
-import io.trino.plugin.hudi.query.HudiFileListing;
-import io.trino.plugin.hudi.query.HudiFileListingFactory;
+import io.trino.plugin.hudi.query.HudiFileLister;
 import io.trino.plugin.hudi.query.HudiQueryMode;
 import io.trino.plugin.hudi.split.HudiSplitBackgroundLoader;
 import io.trino.plugin.hudi.split.HudiSplitWeightProvider;
@@ -43,7 +42,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import static io.airlift.concurrent.MoreFutures.toCompletableFuture;
 import static io.trino.plugin.hudi.HudiSessionProperties.getMinimumAssignedSplitWeight;
@@ -51,6 +49,7 @@ import static io.trino.plugin.hudi.HudiSessionProperties.getStandardSplitWeightS
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeightsEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
+import static io.trino.plugin.hudi.query.HudiFileListerFactory.buildHudiFileLister;
 import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static java.util.concurrent.CompletableFuture.runAsync;
 import static java.util.stream.Collectors.toList;
@@ -84,7 +83,7 @@ public class HudiSplitSource
                 .map(column -> partitionColumnHandleMap.get(column.getName())).collect(toList());
 
         // TODO: fetch the query mode from config / query context
-        HudiFileListing hudiFileListing = HudiFileListingFactory.get(
+        HudiFileLister hudiFileLister = buildHudiFileLister(
                 HudiQueryMode.READ_OPTIMIZED,
                 metadataConfig,
                 engineContext,
@@ -100,7 +99,7 @@ public class HudiSplitSource
                 session,
                 tableHandle,
                 metaClient,
-                hudiFileListing,
+                hudiFileLister,
                 queue,
                 executor,
                 createSplitWeightProvider(session));
@@ -118,14 +117,12 @@ public class HudiSplitSource
     {
         boolean noMoreSplits = isFinished();
         if (trinoException != null) {
-            return toCompletableFuture(immediateFailedFuture(trinoException));
+            return CompletableFuture.failedFuture(trinoException);
         }
 
         return toCompletableFuture(Futures.transform(
                 queue.getBatchAsync(maxSize),
-                splits -> {
-                    return new ConnectorSplitBatch(splits, noMoreSplits);
-                },
+                splits -> new ConnectorSplitBatch(splits, noMoreSplits),
                 directExecutor()));
     }
 

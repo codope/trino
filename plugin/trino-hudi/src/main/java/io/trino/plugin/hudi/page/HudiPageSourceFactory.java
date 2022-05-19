@@ -29,7 +29,7 @@ public final class HudiPageSourceFactory
 {
     private HudiPageSourceFactory() {}
 
-    public static HudiPageSourceCreator get(
+    public static HudiPageSourceCreator buildHudiPageSourceCreator(
             HoodieFileFormat baseFileFormat,
             HudiConfig hudiConfig,
             HdfsEnvironment hdfsEnvironment,

@@ -27,11 +27,11 @@ import java.util.List;
 
 import static java.lang.String.format;
 
-public final class HudiFileListingFactory
+public final class HudiFileListerFactory
 {
-    private HudiFileListingFactory() {}
+    private HudiFileListerFactory() {}
 
-    public static HudiFileListing get(
+    public static HudiFileLister buildHudiFileLister(
             HudiQueryMode queryMode,
             HoodieMetadataConfig metadataConfig,
             HoodieEngineContext engineContext,
@@ -43,18 +43,8 @@ public final class HudiFileListingFactory
             boolean shouldSkipMetastoreForPartition)
     {
         switch (queryMode) {
-            case SNAPSHOT:
-                return new HudiSnapshotFileListing(
-                        metadataConfig,
-                        engineContext,
-                        tableHandle,
-                        metaClient,
-                        hiveMetastore,
-                        hiveTable,
-                        partitionColumnHandles,
-                        shouldSkipMetastoreForPartition);
             case READ_OPTIMIZED:
-                return new HudiReadOptimizedFileListing(
+                return new HudiReadOptimizedFileLister(
                         metadataConfig,
                         engineContext,
                         tableHandle,
@@ -63,6 +53,8 @@ public final class HudiFileListingFactory
                         hiveTable,
                         partitionColumnHandles,
                         shouldSkipMetastoreForPartition);
+            case SNAPSHOT:
+            case INCREMENTAL:
             default:
                 throw new HoodieException(format("Hudi query mode %s is not supported yet", queryMode));
         }

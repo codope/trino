@@ -35,8 +35,8 @@ import javax.inject.Inject;
 
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.stream.Collectors;
 
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
@@ -54,8 +54,8 @@ public class HudiSplitManager
     public HudiSplitManager(
             HudiTransactionManager transactionManager,
             HdfsEnvironment hdfsEnvironment,
-            HudiConfig hudiConfig,
-            @ForHudiSplitManager ExecutorService executor)
+            @ForHudiSplitManager ExecutorService executor,
+            HudiConfig hudiConfig)
     {
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
@@ -85,7 +85,7 @@ public class HudiSplitManager
         Map<String, HiveColumnHandle> partitionColumnHandles = hudiMetadata.getColumnHandles(session, tableHandle)
                 .values().stream().map(HiveColumnHandle.class::cast)
                 .filter(HiveColumnHandle::isPartitionKey)
-                .collect(Collectors.toMap(HiveColumnHandle::getName, identity()));
+                .collect(toImmutableMap(HiveColumnHandle::getName, identity()));
         Table table = metastore.getTable(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(schemaTableName(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())));
         HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);

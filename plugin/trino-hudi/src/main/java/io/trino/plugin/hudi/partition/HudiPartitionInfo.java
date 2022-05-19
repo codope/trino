@@ -28,10 +28,7 @@ public abstract class HudiPartitionInfo
     protected final Table table;
     protected final List<HiveColumnHandle> partitionColumnHandles;
     protected final TupleDomain<HiveColumnHandle> constraintSummary;
-
-    // Relative partition path
     protected String relativePartitionPath;
-    // Hive partition name containing partition column key-value pairs
     protected String hivePartitionName;
     protected List<HivePartitionKey> hivePartitionKeys;
 

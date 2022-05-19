@@ -18,7 +18,7 @@ import io.trino.spi.SplitWeight;
 
 public interface HudiSplitWeightProvider
 {
-    SplitWeight weightForSplitSizeInBytes(long splitSizeInBytes);
+    SplitWeight calculateSplitWeight(long splitSizeInBytes);
 
     static HudiSplitWeightProvider uniformStandardWeightProvider()
     {

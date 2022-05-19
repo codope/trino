@@ -22,8 +22,7 @@ import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.parquet.ParquetReaderConfig;
 import io.trino.plugin.hudi.page.HudiPageSourceCreator;
-import io.trino.plugin.hudi.page.HudiPageSourceFactory;
-import io.trino.plugin.hudi.page.HudiParquetPageSourceCreator;
+import io.trino.spi.TrinoException;
 import io.trino.spi.block.Block;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorPageSource;
@@ -33,7 +32,8 @@ import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorTableHandle;
 import io.trino.spi.connector.ConnectorTransactionHandle;
 import io.trino.spi.connector.DynamicFilter;
-import io.trino.spi.predicate.Utils;
+import io.trino.spi.type.Decimals;
+import io.trino.spi.type.TypeSignature;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.model.HoodieFileFormat;
@@ -41,16 +41,45 @@ import org.joda.time.DateTimeZone;
 
 import javax.inject.Inject;
 
-import java.util.HashMap;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TimeZone;
 import java.util.stream.Collectors;
 
-import static io.trino.plugin.hudi.HudiUtil.convertPartitionValue;
+import static com.google.common.base.Preconditions.checkArgument;
+import static io.airlift.slice.Slices.utf8Slice;
+import static io.trino.plugin.hudi.HudiErrorCode.HUDI_INVALID_PARTITION_VALUE;
+import static io.trino.plugin.hudi.page.HudiPageSourceFactory.buildHudiPageSourceCreator;
+import static io.trino.plugin.hudi.page.HudiParquetPageSourceCreator.CONTEXT_KEY_PARQUET_READER_OPTIONS;
+import static io.trino.spi.predicate.Utils.nativeValueToBlock;
+import static io.trino.spi.type.StandardTypes.BIGINT;
+import static io.trino.spi.type.StandardTypes.BOOLEAN;
+import static io.trino.spi.type.StandardTypes.DATE;
+import static io.trino.spi.type.StandardTypes.DECIMAL;
+import static io.trino.spi.type.StandardTypes.DOUBLE;
+import static io.trino.spi.type.StandardTypes.INTEGER;
+import static io.trino.spi.type.StandardTypes.REAL;
+import static io.trino.spi.type.StandardTypes.SMALLINT;
+import static io.trino.spi.type.StandardTypes.TIMESTAMP;
+import static io.trino.spi.type.StandardTypes.TINYINT;
+import static io.trino.spi.type.StandardTypes.VARBINARY;
+import static io.trino.spi.type.StandardTypes.VARCHAR;
+import static java.lang.Double.parseDouble;
+import static java.lang.Float.floatToRawIntBits;
+import static java.lang.Float.parseFloat;
+import static java.lang.Long.parseLong;
+import static java.lang.String.format;
+import static java.util.Objects.isNull;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
+import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 
 public class HudiPageSourceProvider
         implements ConnectorPageSourceProvider
@@ -73,11 +102,15 @@ public class HudiPageSourceProvider
         this.fileFormatDataSourceStats = requireNonNull(fileFormatDataSourceStats, "fileFormatDataSourceStats is null");
         this.hudiConfig = requireNonNull(hudiConfig, "hudiConfig is null");
         this.timeZone = DateTimeZone.forID(TimeZone.getDefault().getID());
-        this.pageSourceBuilderMap = new HashMap<>();
         this.context = ImmutableMap.<String, Object>builder()
                 .put(
-                        HudiParquetPageSourceCreator.CONTEXT_KEY_PARQUET_READER_OPTIONS,
+                        CONTEXT_KEY_PARQUET_READER_OPTIONS,
                         requireNonNull(parquetReaderConfig, "parquetReaderConfig is null").toParquetReaderOptions())
+                .buildOrThrow();
+        this.pageSourceBuilderMap = ImmutableMap.<HoodieFileFormat, HudiPageSourceCreator>builder()
+                .put(
+                        PARQUET,
+                        buildHudiPageSourceCreator(PARQUET, hudiConfig, hdfsEnvironment, fileFormatDataSourceStats, timeZone, context))
                 .buildOrThrow();
     }
 
@@ -102,7 +135,7 @@ public class HudiPageSourceProvider
                 .filter(columnHandle -> !columnHandle.isPartitionKey())
                 .collect(Collectors.toList());
         Configuration configuration = hdfsEnvironment.getConfiguration(new HdfsContext(session), path);
-        ConnectorPageSource dataPageSource = getHudiPageSourceCreator(hudiFileFormat).createPageSource(
+        ConnectorPageSource dataPageSource = pageSourceBuilderMap.get(hudiFileFormat).createPageSource(
                 configuration, session.getIdentity(), regularColumns, split);
 
         return new HudiPageSource(
@@ -119,25 +152,56 @@ public class HudiPageSourceProvider
                 .filter(HiveColumnHandle::isPartitionKey)
                 .collect(toMap(
                         HiveColumnHandle::getName,
-                        columnHandle -> Utils.nativeValueToBlock(
+                        columnHandle -> nativeValueToBlock(
                                 columnHandle.getType(),
-                                convertPartitionValue(
+                                partitionToNativeValue(
                                         columnHandle.getName(),
                                         partitionKeys.get(0).getValue(),
                                         columnHandle.getType().getTypeSignature()).orElse(null))));
     }
 
-    private HudiPageSourceCreator getHudiPageSourceCreator(HoodieFileFormat hudiFileFormat)
+    private static Optional<Object> partitionToNativeValue(
+            String partitionColumnName,
+            String partitionValue,
+            TypeSignature partitionDataType)
     {
-        if (!pageSourceBuilderMap.containsKey(hudiFileFormat)) {
-            // HudiPageSourceProvider::createPageSource may be called concurrently
-            // So the below guarantees the construction of HudiPageSourceCreator once
-            synchronized (pageSourceBuilderMap) {
-                pageSourceBuilderMap.computeIfAbsent(hudiFileFormat,
-                        format -> HudiPageSourceFactory.get(
-                                format, hudiConfig, hdfsEnvironment, fileFormatDataSourceStats, timeZone, context));
+        if (isNull(partitionValue)) {
+            return Optional.empty();
+        }
+
+        String baseType = partitionDataType.getBase();
+        try {
+            switch (baseType) {
+                case TINYINT:
+                case SMALLINT:
+                case INTEGER:
+                case BIGINT:
+                    return Optional.of(parseLong(partitionValue));
+                case REAL:
+                    return Optional.of((long) floatToRawIntBits(parseFloat(partitionValue)));
+                case DOUBLE:
+                    return Optional.of(parseDouble(partitionValue));
+                case VARCHAR:
+                case VARBINARY:
+                    return Optional.of(utf8Slice(partitionValue));
+                case DATE:
+                    return Optional.of(LocalDate.parse(partitionValue, DateTimeFormatter.ISO_LOCAL_DATE).toEpochDay());
+                case TIMESTAMP:
+                    return Optional.of(Timestamp.valueOf(partitionValue).toLocalDateTime().toEpochSecond(ZoneOffset.UTC) * 1_000);
+                case BOOLEAN:
+                    checkArgument(partitionValue.equalsIgnoreCase("true") || partitionValue.equalsIgnoreCase("false"));
+                    return Optional.of(Boolean.valueOf(partitionValue));
+                case DECIMAL:
+                    return Optional.of(Decimals.parse(partitionValue).getObject());
+                default:
+                    throw new TrinoException(HUDI_INVALID_PARTITION_VALUE,
+                            format("Unsupported data type '%s' for partition column %s", partitionDataType, partitionColumnName));
             }
         }
-        return pageSourceBuilderMap.get(hudiFileFormat);
+        catch (IllegalArgumentException | DateTimeParseException e) {
+            throw new TrinoException(HUDI_INVALID_PARTITION_VALUE,
+                    format("Can not parse partition value '%s' of type '%s' for partition column '%s'",
+                            partitionValue, partitionDataType, partitionColumnName));
+        }
     }
 }

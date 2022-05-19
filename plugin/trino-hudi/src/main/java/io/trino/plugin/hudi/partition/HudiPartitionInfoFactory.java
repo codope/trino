@@ -28,7 +28,7 @@ public final class HudiPartitionInfoFactory
 {
     private HudiPartitionInfoFactory() {}
 
-    public static HudiPartitionInfo get(
+    public static HudiPartitionInfo buildHudiPartitionInfo(
             boolean shouldSkipMetastoreForPartition,
             Option<String> relativePartitionPath,
             Option<String> hivePartitionName,
@@ -40,7 +40,7 @@ public final class HudiPartitionInfoFactory
             HiveMetastore hiveMetastore)
     {
         if (shouldSkipMetastoreForPartition) {
-            return new HudiPartitionInternalInfo(
+            return new InternalHudiPartitionInfo(
                     relativePartitionPath.get(),
                     partitionColumns,
                     partitionColumnHandles,
@@ -48,7 +48,7 @@ public final class HudiPartitionInfoFactory
                     partitionValueExtractor.get(),
                     table);
         }
-        return new HudiPartitionHiveInfo(
+        return new HiveHudiPartitionInfo(
                 hivePartitionName.get(),
                 partitionColumns,
                 partitionColumnHandles,

@@ -38,7 +38,7 @@ public class SizeBasedSplitWeightProvider
     }
 
     @Override
-    public SplitWeight weightForSplitSizeInBytes(long splitSizeInBytes)
+    public SplitWeight calculateSplitWeight(long splitSizeInBytes)
     {
         double computedWeight = splitSizeInBytes / standardSplitSizeInBytes;
         // Clamp the value between the minimum weight and 1.0 (standard weight)

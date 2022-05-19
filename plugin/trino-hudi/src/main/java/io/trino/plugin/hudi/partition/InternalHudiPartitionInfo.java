@@ -27,18 +27,20 @@ import org.apache.hudi.hive.PartitionValueExtractor;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static java.util.Objects.isNull;
 
-public class HudiPartitionInternalInfo
+public class InternalHudiPartitionInfo
         extends HudiPartitionInfo
 {
     private final List<Column> partitionColumns;
     private final PartitionValueExtractor partitionValueExtractor;
 
-    public HudiPartitionInternalInfo(
-            String relativePartitionPath, List<Column> partitionColumns,
+    public InternalHudiPartitionInfo(
+            String relativePartitionPath,
+            List<Column> partitionColumns,
             List<HiveColumnHandle> partitionColumnHandles,
             TupleDomain<HiveColumnHandle> constraintSummary,
             PartitionValueExtractor partitionValueExtractor,
@@ -79,12 +81,12 @@ public class HudiPartitionInternalInfo
     public boolean doesMatchPredicates()
     {
         Map<String, String> partitionKeyValueMap =
-                getHivePartitionKeys().stream().collect(Collectors.toMap(
+                getHivePartitionKeys().stream().collect(toImmutableMap(
                         HivePartitionKey::getName, HivePartitionKey::getValue));
         List<String> partitionValues = partitionColumns.stream()
                 .map(column -> partitionKeyValueMap.get(column.getName()))
-                .collect(Collectors.toList());
-        return HudiUtil.doesPartitionMatchPredicates(
+                .collect(toImmutableList());
+        return HudiUtil.partitionMatchesPredicates(
                 table.getSchemaTableName(), relativePartitionPath, partitionValues,
                 partitionColumnHandles, constraintSummary);
     }

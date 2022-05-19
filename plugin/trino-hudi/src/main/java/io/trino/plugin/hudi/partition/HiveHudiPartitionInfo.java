@@ -21,7 +21,6 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.HiveUtil;
-import io.trino.plugin.hudi.HudiUtil;
 import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.fs.FSUtils;
@@ -31,21 +30,24 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
+import static io.trino.plugin.hudi.HudiUtil.buildPartitionKeys;
+import static io.trino.plugin.hudi.HudiUtil.partitionMatchesPredicates;
 import static java.lang.String.format;
 import static java.util.Objects.isNull;
 
-public class HudiPartitionHiveInfo
+public class HiveHudiPartitionInfo
         extends HudiPartitionInfo
 {
     private final List<Column> partitionColumns;
     private final HiveMetastore hiveMetastore;
 
-    public HudiPartitionHiveInfo(
+    public HiveHudiPartitionInfo(
             String hivePartitionName,
             List<Column> partitionColumns,
             List<HiveColumnHandle> partitionColumnHandles,
             TupleDomain<HiveColumnHandle> constraintSummary,
-            Table table, HiveMetastore hiveMetastore)
+            Table table,
+            HiveMetastore hiveMetastore)
     {
         super(table, partitionColumnHandles, constraintSummary);
         this.hivePartitionName = hivePartitionName;
@@ -84,7 +86,7 @@ public class HudiPartitionHiveInfo
     @Override
     public boolean doesMatchPredicates()
     {
-        return HudiUtil.doesPartitionMatchPredicates(
+        return partitionMatchesPredicates(
                 table.getSchemaTableName(), hivePartitionName,
                 partitionColumnHandles, constraintSummary);
     }
@@ -104,8 +106,7 @@ public class HudiPartitionHiveInfo
         this.relativePartitionPath = FSUtils.getRelativePartitionPath(
                 new Path(table.getStorage().getLocation()),
                 new Path(partition.get().getStorage().getLocation()));
-        this.hivePartitionKeys =
-                HudiUtil.buildPartitionKeys(partitionColumns, partition.get().getValues());
+        this.hivePartitionKeys = buildPartitionKeys(partitionColumns, partition.get().getValues());
     }
 
     @Override

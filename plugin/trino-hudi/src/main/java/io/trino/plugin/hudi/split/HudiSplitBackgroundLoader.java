@@ -20,7 +20,7 @@ import io.trino.plugin.hive.util.AsyncQueue;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
 import io.trino.plugin.hudi.partition.HudiPartitionInfoLoader;
-import io.trino.plugin.hudi.query.HudiFileListing;
+import io.trino.plugin.hudi.query.HudiFileLister;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import org.apache.hadoop.fs.FileStatus;
@@ -39,7 +39,7 @@ public class HudiSplitBackgroundLoader
         implements Runnable
 {
     private final ConnectorSession session;
-    private final HudiFileListing hudiFileListing;
+    private final HudiFileLister hudiFileLister;
     private final AsyncQueue<ConnectorSplit> asyncQueue;
     private final ExecutorService executor;
     private final HudiSplitFactory hudiSplitFactory;
@@ -48,13 +48,13 @@ public class HudiSplitBackgroundLoader
             ConnectorSession session,
             HudiTableHandle tableHandle,
             HoodieTableMetaClient metaClient,
-            HudiFileListing hudiFileListing,
+            HudiFileLister hudiFileLister,
             AsyncQueue<ConnectorSplit> asyncQueue,
             ExecutorService executor,
             HudiSplitWeightProvider hudiSplitWeightProvider)
     {
         this.session = requireNonNull(session, "session is null");
-        this.hudiFileListing = requireNonNull(hudiFileListing, "hudiFileListing is null");
+        this.hudiFileLister = requireNonNull(hudiFileLister, "hudiFileListing is null");
         this.asyncQueue = requireNonNull(asyncQueue, "asyncQueue is null");
         this.executor = requireNonNull(executor, "executor is null");
         this.hudiSplitFactory = new HudiSplitFactory(tableHandle, hudiSplitWeightProvider, metaClient.getFs());
@@ -65,7 +65,7 @@ public class HudiSplitBackgroundLoader
     {
         ArrayDeque<HudiPartitionInfo> partitionQueue = new ArrayDeque<>();
         HudiPartitionInfoLoader partitionInfoLoader =
-                new HudiPartitionInfoLoader(session, hudiFileListing, partitionQueue);
+                new HudiPartitionInfoLoader(session, hudiFileLister, partitionQueue);
         partitionInfoLoader.run();
 
         CompletableFuture<?>[] futures = partitionQueue.stream()
@@ -80,7 +80,7 @@ public class HudiSplitBackgroundLoader
     {
         return runAsync(() -> {
             List<HivePartitionKey> partitionKeys = partition.getHivePartitionKeys();
-            List<FileStatus> partitionFiles = hudiFileListing.listStatus(partition);
+            List<FileStatus> partitionFiles = hudiFileLister.listStatus(partition);
             partitionFiles.stream()
                     .flatMap(fileStatus -> hudiSplitFactory.createSplits(partitionKeys, fileStatus))
                     .map(asyncQueue::offer)

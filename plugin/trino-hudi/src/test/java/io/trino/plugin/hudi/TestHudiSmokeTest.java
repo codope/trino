@@ -20,7 +20,7 @@ import io.trino.testing.AbstractTestQueryFramework;
 import io.trino.testing.QueryRunner;
 import org.testng.annotations.Test;
 
-import static io.trino.plugin.hudi.HudiQueryRunners.createHudiQueryRunner;
+import static io.trino.plugin.hudi.HudiQueryRunner.createHudiQueryRunner;
 import static io.trino.plugin.hudi.testing.ResourceHudiDataLoader.TestingTable.HUDI_NON_PART_COW;
 import static io.trino.plugin.hudi.testing.ResourceHudiDataLoader.TestingTable.STOCK_TICKS_COW;
 import static io.trino.plugin.hudi.testing.ResourceHudiDataLoader.TestingTable.STOCK_TICKS_MOR;
