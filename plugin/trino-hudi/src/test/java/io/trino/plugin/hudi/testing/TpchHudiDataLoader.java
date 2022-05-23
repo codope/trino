@@ -23,6 +23,7 @@ import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.StorageFormat;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.tpch.TpchPlugin;
 import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.testing.MaterializedResult;
 import io.trino.testing.MaterializedRow;
@@ -117,6 +118,8 @@ public class TpchHudiDataLoader
             CatalogSchemaName hudiCatalogSchema,
             String dataDir)
     {
+        queryRunner.installPlugin(new TpchPlugin());
+        queryRunner.createCatalog(tpchCatalogSchema.getCatalogName(), "tpch", ImmutableMap.of());
         for (TpchTable<?> table : TpchTable.getTables()) {
             load(table, queryRunner, metastore, hudiCatalogSchema, dataDir);
         }

@@ -32,6 +32,7 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
@@ -66,7 +67,7 @@ public class HudiSplitSource
             HiveMetastore metastore,
             Table table,
             HudiTableHandle tableHandle,
-            Configuration conf,
+            FileSystem fs,
             Map<String, HiveColumnHandle> partitionColumnHandleMap,
             ExecutorService executor,
             int maxSplitsPerSecond,
@@ -74,8 +75,8 @@ public class HudiSplitSource
     {
         boolean metadataEnabled = isHudiMetadataEnabled(session);
         boolean shouldSkipMetastoreForPartition = shouldSkipMetaStoreForPartition(session);
-        HoodieTableMetaClient metaClient = buildTableMetaClient(conf, tableHandle.getBasePath());
-        HoodieEngineContext engineContext = new HoodieLocalEngineContext(conf);
+        HoodieTableMetaClient metaClient = buildTableMetaClient(fs.getConf(), tableHandle.getBasePath());
+        HoodieEngineContext engineContext = new HoodieLocalEngineContext(fs.getConf());
         HoodieMetadataConfig metadataConfig = HoodieMetadataConfig.newBuilder()
                 .enable(metadataEnabled)
                 .build();
@@ -97,8 +98,8 @@ public class HudiSplitSource
         this.queue = new ThrottledAsyncQueue<>(maxSplitsPerSecond, maxOutstandingSplits, executor);
         HudiSplitBackgroundLoader splitLoader = new HudiSplitBackgroundLoader(
                 session,
+                fs,
                 tableHandle,
-                metaClient,
                 hudiFileLister,
                 queue,
                 executor,

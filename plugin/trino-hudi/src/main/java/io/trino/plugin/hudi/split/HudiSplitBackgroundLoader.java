@@ -24,7 +24,7 @@ import io.trino.plugin.hudi.query.HudiFileLister;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import org.apache.hadoop.fs.FileStatus;
-import org.apache.hudi.common.table.HoodieTableMetaClient;
+import org.apache.hadoop.fs.FileSystem;
 
 import java.util.ArrayDeque;
 import java.util.List;
@@ -46,8 +46,8 @@ public class HudiSplitBackgroundLoader
 
     public HudiSplitBackgroundLoader(
             ConnectorSession session,
+            FileSystem fs,
             HudiTableHandle tableHandle,
-            HoodieTableMetaClient metaClient,
             HudiFileLister hudiFileLister,
             AsyncQueue<ConnectorSplit> asyncQueue,
             ExecutorService executor,
@@ -57,7 +57,7 @@ public class HudiSplitBackgroundLoader
         this.hudiFileLister = requireNonNull(hudiFileLister, "hudiFileListing is null");
         this.asyncQueue = requireNonNull(asyncQueue, "asyncQueue is null");
         this.executor = requireNonNull(executor, "executor is null");
-        this.hudiSplitFactory = new HudiSplitFactory(tableHandle, hudiSplitWeightProvider, metaClient.getFs());
+        this.hudiSplitFactory = new HudiSplitFactory(tableHandle, hudiSplitWeightProvider, fs);
     }
 
     @Override

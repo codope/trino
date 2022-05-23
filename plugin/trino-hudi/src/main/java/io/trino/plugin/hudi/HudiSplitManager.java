@@ -19,6 +19,7 @@ import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
@@ -27,12 +28,13 @@ import io.trino.spi.connector.ConnectorTransactionHandle;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.TableNotFoundException;
-import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
@@ -88,15 +90,20 @@ public class HudiSplitManager
                 .collect(toImmutableMap(HiveColumnHandle::getName, identity()));
         Table table = metastore.getTable(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(schemaTableName(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())));
-        HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
-        Configuration conf = hdfsEnvironment.getConfiguration(
-                context, new Path(table.getStorage().getLocation()));
+        final FileSystem fs;
+        try {
+            HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
+            fs = hdfsEnvironment.getFileSystem(context, new Path(table.getStorage().getLocation()));
+        }
+        catch (IOException e) {
+            throw new TrinoException(HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT, "Cannot get filesystem", e);
+        }
         HudiSplitSource splitSource = new HudiSplitSource(
                 session,
                 metastore,
                 table,
                 hudiTableHandle,
-                conf,
+                fs,
                 partitionColumnHandles,
                 executor,
                 maxSplitsPerSecond,
