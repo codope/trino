@@ -16,7 +16,6 @@ package io.trino.plugin.hudi.testing;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.io.Resources;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HiveStorageFormat;
 import io.trino.plugin.hive.HiveType;
@@ -34,10 +33,9 @@ import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hudi.common.model.HoodieTableType;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -46,16 +44,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import static io.trino.plugin.hive.HivePartitionManager.extractPartitionValues;
 import static io.trino.plugin.hive.HiveType.HIVE_DOUBLE;
 import static io.trino.plugin.hive.HiveType.HIVE_INT;
 import static io.trino.plugin.hive.HiveType.HIVE_LONG;
 import static io.trino.plugin.hive.HiveType.HIVE_STRING;
-import static java.nio.file.Files.createDirectories;
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
 import static org.apache.hudi.common.model.HoodieTableType.COPY_ON_WRITE;
 import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
 
@@ -72,9 +66,8 @@ public class ResourceHudiDataLoader
             String dataDir)
             throws Exception
     {
-        URL url = Resources.getResource("hudi-testing-data.zip");
         Path basePath = Path.of(dataDir);
-        unzip(url.openStream(), basePath);
+        copyDir(Paths.get("src/test/resources/hudi-testing-data"), basePath);
         Logger.get(getClass()).info("Prepared table data in %s", basePath);
 
         for (TestingTable table : TestingTable.values()) {
@@ -136,26 +129,19 @@ public class ResourceHudiDataLoader
         return new Column(name, type, Optional.empty());
     }
 
-    private static void unzip(InputStream inputStream, Path destDir)
+    private static void copyDir(Path srcDir, Path dstDir)
             throws IOException
     {
-        createDirectories(destDir);
-        try (ZipInputStream zipStream = new ZipInputStream(inputStream)) {
-            while (true) {
-                ZipEntry zipEntry = zipStream.getNextEntry();
-                if (zipEntry == null) {
-                    break;
-                }
-
-                Path entryPath = destDir.resolve(zipEntry.getName());
-                if (zipEntry.isDirectory()) {
-                    createDirectories(entryPath);
-                }
-                else {
-                    createDirectories(entryPath.getParent());
-                    Files.copy(zipStream, entryPath, REPLACE_EXISTING);
-                }
-                zipStream.closeEntry();
+        List<Path> files = Files.walk(srcDir).collect(Collectors.toList());
+        for (Path path : files) {
+            Path relativePath = srcDir.relativize(path);
+            if (path.toFile().isDirectory()) {
+                Files.createDirectories(dstDir.resolve(relativePath));
+            }
+            else {
+                Path dstFile = dstDir.resolve(relativePath);
+                Files.createDirectories(dstFile.getParent());
+                Files.copy(path, dstFile);
             }
         }
     }
