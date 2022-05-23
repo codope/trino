@@ -32,7 +32,7 @@ public class TestHudiSmokeTest
     protected QueryRunner createQueryRunner()
             throws Exception
     {
-        return createHudiQueryRunner(ImmutableMap.of(), ImmutableMap.of(), ResourceHudiDataLoader.factory());
+        return createHudiQueryRunner(ImmutableMap.of(), ImmutableMap.of(), new ResourceHudiDataLoader());
     }
 
     @Test

@@ -29,6 +29,7 @@ import io.trino.plugin.hive.metastore.PrincipalPrivileges;
 import io.trino.plugin.hive.metastore.StorageFormat;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.spi.connector.CatalogSchemaName;
+import io.trino.testing.QueryRunner;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hudi.common.model.HoodieTableType;
 
@@ -55,35 +56,20 @@ import static io.trino.plugin.hive.HiveType.HIVE_LONG;
 import static io.trino.plugin.hive.HiveType.HIVE_STRING;
 import static java.nio.file.Files.createDirectories;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
-import static java.util.Objects.requireNonNull;
 import static org.apache.hudi.common.model.HoodieTableType.COPY_ON_WRITE;
 import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
 
 public class ResourceHudiDataLoader
         implements HudiDataLoader
 {
-    private final HiveMetastore metastore;
-    private final CatalogSchemaName hudiCatalogSchema;
-    private final String dataDir;
+    public ResourceHudiDataLoader() {}
 
-    public static HudiDataLoaderFactory factory()
-    {
-        return (queryRunner, metastore, hudiCatalogSchema, dataDir) ->
-                new ResourceHudiDataLoader(metastore, hudiCatalogSchema, dataDir);
-    }
-
-    private ResourceHudiDataLoader(
+    @Override
+    public void load(
+            QueryRunner queryRunner,
             HiveMetastore metastore,
             CatalogSchemaName hudiCatalogSchema,
             String dataDir)
-    {
-        this.metastore = requireNonNull(metastore, "metastore is null");
-        this.hudiCatalogSchema = requireNonNull(hudiCatalogSchema, "hudiCatalogSchema is null");
-        this.dataDir = requireNonNull(dataDir, "dataDir is null");
-    }
-
-    @Override
-    public void load()
             throws Exception
     {
         URL url = Resources.getResource("hudi-testing-data.zip");
@@ -94,6 +80,8 @@ public class ResourceHudiDataLoader
         for (TestingTable table : TestingTable.values()) {
             String tableName = table.getTableName();
             createTable(
+                    metastore,
+                    hudiCatalogSchema,
                     basePath.resolve(tableName),
                     tableName,
                     table.getDataColumns(),
@@ -103,6 +91,8 @@ public class ResourceHudiDataLoader
     }
 
     private void createTable(
+            HiveMetastore metastore,
+            CatalogSchemaName hudiCatalogSchema,
             Path tablePath,
             String tableName,
             List<Column> dataColumns,

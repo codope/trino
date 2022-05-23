@@ -20,7 +20,7 @@ import io.airlift.log.Logging;
 import io.trino.Session;
 import io.trino.plugin.hive.metastore.Database;
 import io.trino.plugin.hive.metastore.HiveMetastore;
-import io.trino.plugin.hudi.testing.HudiDataLoaderFactory;
+import io.trino.plugin.hudi.testing.HudiDataLoader;
 import io.trino.plugin.hudi.testing.ResourceHudiDataLoader;
 import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.spi.security.PrincipalType;
@@ -43,7 +43,7 @@ public final class HudiQueryRunner
     public static DistributedQueryRunner createHudiQueryRunner(
             Map<String, String> serverConfig,
             Map<String, String> connectorConfig,
-            HudiDataLoaderFactory dataLoaderFactory)
+            HudiDataLoader dataLoader)
             throws Exception
     {
         Session session = testSessionBuilder()
@@ -74,7 +74,7 @@ public final class HudiQueryRunner
                 connectorConfig);
 
         String dataDir = coordinatorBaseDir.resolve("data").toString();
-        dataLoaderFactory.create(queryRunner, metastore, HUDI_TESTS, dataDir).load();
+        dataLoader.load(queryRunner, metastore, HUDI_TESTS, dataDir);
         return queryRunner;
     }
 
@@ -85,11 +85,11 @@ public final class HudiQueryRunner
         Logger log = Logger.get(HudiQueryRunner.class);
 
         DistributedQueryRunner queryRunner = null;
-        try {
-            queryRunner = createHudiQueryRunner(
-                    ImmutableMap.of("http-server.http.port", "8080"),
-                    ImmutableMap.of(),
-                    ResourceHudiDataLoader.factory());
+        try (DistributedQueryRunner runner = createHudiQueryRunner(
+                ImmutableMap.of("http-server.http.port", "8080"),
+                ImmutableMap.of(),
+                new ResourceHudiDataLoader())) {
+            queryRunner = runner;
         }
         catch (Throwable t) {
             log.error(t);

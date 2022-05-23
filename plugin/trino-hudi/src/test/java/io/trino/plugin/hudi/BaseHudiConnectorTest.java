@@ -36,7 +36,7 @@ public abstract class BaseHudiConnectorTest
         return HudiQueryRunner.createHudiQueryRunner(
                 ImmutableMap.of(),
                 ImmutableMap.of("hudi.columns-to-hide", columnsToHide()),
-                TpchHudiDataLoader.factory(getHoodieTableType()));
+                new TpchHudiDataLoader(getHoodieTableType()));
     }
 
     @Override

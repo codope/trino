@@ -14,8 +14,15 @@
 
 package io.trino.plugin.hudi.testing;
 
+import io.trino.plugin.hive.metastore.HiveMetastore;
+import io.trino.spi.connector.CatalogSchemaName;
+import io.trino.testing.QueryRunner;
+
 public interface HudiDataLoader
 {
-    void load()
+    void load(QueryRunner queryRunner,
+            HiveMetastore metastore,
+            CatalogSchemaName hudiCatalogSchema,
+            String dataDir)
             throws Exception;
 }
