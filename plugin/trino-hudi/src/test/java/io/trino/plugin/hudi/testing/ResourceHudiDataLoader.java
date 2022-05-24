@@ -38,6 +38,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -132,16 +133,18 @@ public class ResourceHudiDataLoader
     private static void copyDir(Path srcDir, Path dstDir)
             throws IOException
     {
-        List<Path> files = Files.walk(srcDir).collect(Collectors.toList());
-        for (Path path : files) {
-            Path relativePath = srcDir.relativize(path);
-            if (path.toFile().isDirectory()) {
-                Files.createDirectories(dstDir.resolve(relativePath));
-            }
-            else {
-                Path dstFile = dstDir.resolve(relativePath);
-                Files.createDirectories(dstFile.getParent());
-                Files.copy(path, dstFile);
+        try (Stream<Path> paths = Files.walk(srcDir)) {
+            for (Iterator<Path> iterator = paths.iterator(); iterator.hasNext(); ) {
+                Path path = iterator.next();
+                Path relativePath = srcDir.relativize(path);
+                if (path.toFile().isDirectory()) {
+                    Files.createDirectories(dstDir.resolve(relativePath));
+                }
+                else {
+                    Path dstFile = dstDir.resolve(relativePath);
+                    Files.createDirectories(dstFile.getParent());
+                    Files.copy(path, dstFile);
+                }
             }
         }
     }

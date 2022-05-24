@@ -29,7 +29,6 @@ import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -103,7 +102,7 @@ public class HudiSplitFactory
             return ImmutableList.of(new FileSplit(path, 0, length, splitHosts[0], splitHosts[1]));
         }
 
-        List<FileSplit> splits = new ArrayList<>();
+        ImmutableList.Builder<FileSplit> splits = ImmutableList.builder();
         long splitSize = fileStatus.getBlockSize();
 
         long bytesRemaining = length;
@@ -116,7 +115,7 @@ public class HudiSplitFactory
             String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
             splits.add(new FileSplit(path, length - bytesRemaining, bytesRemaining, splitHosts[0], splitHosts[1]));
         }
-        return splits;
+        return splits.build();
     }
 
     private static boolean isSplitable(Path filename)

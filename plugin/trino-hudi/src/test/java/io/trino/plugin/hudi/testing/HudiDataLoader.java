@@ -20,7 +20,8 @@ import io.trino.testing.QueryRunner;
 
 public interface HudiDataLoader
 {
-    void load(QueryRunner queryRunner,
+    void load(
+            QueryRunner queryRunner,
             HiveMetastore metastore,
             CatalogSchemaName hudiCatalogSchema,
             String dataDir)
