@@ -22,7 +22,6 @@ import javax.annotation.concurrent.GuardedBy;
 import javax.inject.Inject;
 
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -69,11 +68,6 @@ public class HudiTransactionManager
     {
         @GuardedBy("this")
         private HudiMetadata metadata;
-
-        public synchronized Optional<HudiMetadata> optionalGet()
-        {
-            return Optional.ofNullable(metadata);
-        }
 
         public synchronized HudiMetadata get(ConnectorIdentity identity)
         {

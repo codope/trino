@@ -59,6 +59,7 @@ public class HudiReadOptimizedFileLister
         implements HudiFileLister
 {
     private static final Logger log = Logger.get(HudiReadOptimizedFileLister.class);
+
     final HoodieMetadataConfig metadataConfig;
     final HoodieEngineContext engineContext;
     final HoodieTableMetaClient metaClient;
@@ -215,11 +216,13 @@ public class HudiReadOptimizedFileLister
                 partitionKeysFilter).orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()));
     }
 
+    @Override
     public Map<String, Optional<Partition>> getPartitions(List<String> partitionNames)
     {
         return hiveMetastore.getPartitionsByNames(hiveTable, partitionNames);
     }
 
+    @Override
     public void close()
     {
         if (!isNull(fileSystemView) && !fileSystemView.isClosed()) {

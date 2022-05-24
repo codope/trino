@@ -85,7 +85,7 @@ public class HudiPageSource
                     blocksWithPartitionColumns[columnIndex++] = new RunLengthEncodedBlock(partitionValue, positionCount);
                 }
                 else {
-                    blocksWithPartitionColumns[columnIndex++] = (page.getBlock(dataColumnIndex));
+                    blocksWithPartitionColumns[columnIndex++] = page.getBlock(dataColumnIndex);
                     dataColumnIndex++;
                 }
             }

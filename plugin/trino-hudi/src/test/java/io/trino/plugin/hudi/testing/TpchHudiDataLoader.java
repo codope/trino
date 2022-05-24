@@ -83,7 +83,6 @@ public class TpchHudiDataLoader
 {
     public static final String FIELD_UUID = "_uuid";
     private static final CatalogSchemaName TPCH_TINY = new CatalogSchemaName("tpch", "tiny");
-
     private static final String PARTITION_PATH = "";
     private static final Logger log = Logger.get(TpchHudiDataLoader.class);
     private static final List<Column> HUDI_META_COLUMNS = ImmutableList.of(
@@ -94,59 +93,46 @@ public class TpchHudiDataLoader
             new Column("_hoodie_file_name", HIVE_STRING, Optional.empty()));
 
     private final HoodieTableType tableType;
-    private final QueryRunner queryRunner;
     private final Configuration conf;
-    private final String basePath;
-    private final HiveMetastore metastore;
     private final CatalogSchemaName tpchCatalogSchema;
-    private final CatalogSchemaName hudiCatalogSchema;
 
-    public static HudiDataLoaderFactory factory(HoodieTableType tableType)
+    public TpchHudiDataLoader(HoodieTableType tableType)
     {
-        return (queryRunner, metastore, hudiCatalogSchema, dataDir) -> {
-            queryRunner.installPlugin(new TpchPlugin());
-            queryRunner.createCatalog("tpch", TPCH_TINY.getCatalogName(), ImmutableMap.of());
-
-            return new TpchHudiDataLoader(
-                    tableType,
-                    queryRunner,
-                    new Configuration(false),
-                    dataDir,
-                    metastore,
-                    TPCH_TINY,
-                    hudiCatalogSchema);
-        };
+        this(tableType, new Configuration(false), TPCH_TINY);
     }
 
     private TpchHudiDataLoader(
             HoodieTableType tableType,
-            QueryRunner queryRunner,
             Configuration conf,
-            String basePath,
-            HiveMetastore metastore,
-            CatalogSchemaName tpchCatalogSchema,
-            CatalogSchemaName hudiCatalogSchema)
+            CatalogSchemaName tpchCatalogSchema)
     {
         this.tableType = requireNonNull(tableType, "tableType is null");
-        this.queryRunner = requireNonNull(queryRunner, "queryRunner is null");
         this.conf = requireNonNull(conf, "conf is null");
-        this.basePath = requireNonNull(basePath, "basePath is null");
-        this.metastore = requireNonNull(metastore, "metastore is null");
         this.tpchCatalogSchema = requireNonNull(tpchCatalogSchema, "tpchCatalogSchema is null");
-        this.hudiCatalogSchema = requireNonNull(hudiCatalogSchema, "hudiCatalogSchema is null");
     }
 
     @Override
-    public void load()
+    public void load(
+            QueryRunner queryRunner,
+            HiveMetastore metastore,
+            CatalogSchemaName hudiCatalogSchema,
+            String dataDir)
     {
+        queryRunner.installPlugin(new TpchPlugin());
+        queryRunner.createCatalog(tpchCatalogSchema.getCatalogName(), "tpch", ImmutableMap.of());
         for (TpchTable<?> table : TpchTable.getTables()) {
-            load(table);
+            load(table, queryRunner, metastore, hudiCatalogSchema, dataDir);
         }
     }
 
-    private void load(TpchTable<?> table)
+    private void load(
+            TpchTable<?> table,
+            QueryRunner queryRunner,
+            HiveMetastore metastore,
+            CatalogSchemaName hudiCatalogSchema,
+            String basePath)
     {
-        HoodieJavaWriteClient<HoodieAvroPayload> writeClient = createWriteClient(table);
+        HoodieJavaWriteClient<HoodieAvroPayload> writeClient = createWriteClient(table, basePath);
         RecordConverter recordConverter = createRecordConverter(table);
 
         @Language("SQL") String sql = generateScanSql(tpchCatalogSchema, table);
@@ -162,7 +148,7 @@ public class TpchHudiDataLoader
         writeClient.startCommitWithTime(timestamp);
         writeClient.insert(records, timestamp);
 
-        metastore.createTable(createMetastoreTable(table), NO_PRIVILEGES);
+        metastore.createTable(createMetastoreTable(table, hudiCatalogSchema, basePath), NO_PRIVILEGES);
     }
 
     private String generateScanSql(CatalogSchemaName catalogSchemaName, TpchTable<?> table)
@@ -179,9 +165,9 @@ public class TpchHudiDataLoader
         return builder.toString();
     }
 
-    private Table createMetastoreTable(TpchTable<?> table)
+    private Table createMetastoreTable(TpchTable<?> table, CatalogSchemaName targetCatalogSchema, String basePath)
     {
-        String tablePath = "file://" + getTablePath(table);
+        String tablePath = "file://" + getTablePath(table, basePath);
         List<Column> columns = Stream.of(HUDI_META_COLUMNS, createMetastoreColumns(table))
                 .flatMap(Collection::stream)
                 .collect(toUnmodifiableList());
@@ -189,7 +175,7 @@ public class TpchHudiDataLoader
         StorageFormat storageFormat = StorageFormat.fromHiveStorageFormat(HiveStorageFormat.PARQUET);
 
         return Table.builder()
-                .setDatabaseName(hudiCatalogSchema.getSchemaName())
+                .setDatabaseName(targetCatalogSchema.getSchemaName())
                 .setTableName(table.getTableName())
                 .setTableType(EXTERNAL_TABLE.name())
                 .setOwner(Optional.of("public"))
@@ -201,10 +187,10 @@ public class TpchHudiDataLoader
                 .build();
     }
 
-    private HoodieJavaWriteClient<HoodieAvroPayload> createWriteClient(TpchTable<?> table)
+    private HoodieJavaWriteClient<HoodieAvroPayload> createWriteClient(TpchTable<?> table, String basePath)
     {
         final String tableName = table.getTableName();
-        final String tablePath = getTablePath(table);
+        final String tablePath = getTablePath(table, basePath);
         Schema schema = createArvoSchema(table);
 
         try {
@@ -236,7 +222,7 @@ public class TpchHudiDataLoader
         return new HoodieJavaWriteClient<>(new HoodieJavaEngineContext(conf), cfg);
     }
 
-    private String getTablePath(TpchTable<?> table)
+    private String getTablePath(TpchTable<?> table, String basePath)
     {
         return basePath + "/" + table.getTableName();
     }

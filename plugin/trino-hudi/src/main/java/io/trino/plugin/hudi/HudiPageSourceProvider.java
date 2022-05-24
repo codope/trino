@@ -84,9 +84,7 @@ import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 public class HudiPageSourceProvider
         implements ConnectorPageSourceProvider
 {
-    private final HudiConfig hudiConfig;
     private final HdfsEnvironment hdfsEnvironment;
-    private final FileFormatDataSourceStats fileFormatDataSourceStats;
     private final DateTimeZone timeZone;
     private final Map<HoodieFileFormat, HudiPageSourceCreator> pageSourceBuilderMap;
     private final Map<String, Object> context;
@@ -99,8 +97,6 @@ public class HudiPageSourceProvider
             HudiConfig hudiConfig)
     {
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
-        this.fileFormatDataSourceStats = requireNonNull(fileFormatDataSourceStats, "fileFormatDataSourceStats is null");
-        this.hudiConfig = requireNonNull(hudiConfig, "hudiConfig is null");
         this.timeZone = DateTimeZone.forID(TimeZone.getDefault().getID());
         this.context = ImmutableMap.<String, Object>builder()
                 .put(
