@@ -98,8 +98,8 @@ public class HudiSplitFactory
         }
 
         if (!isSplitable(path)) {
-            String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, 0);
-            return ImmutableList.of(new FileSplit(path, 0, length, splitHosts[0], splitHosts[1]));
+            SplitHosts splitHosts = SplitHosts.at(blkLocations, 0);
+            return ImmutableList.of(new FileSplit(path, 0, length, splitHosts.getHosts(), splitHosts.getCachedHosts()));
         }
 
         ImmutableList.Builder<FileSplit> splits = ImmutableList.builder();
@@ -107,13 +107,13 @@ public class HudiSplitFactory
 
         long bytesRemaining = length;
         while (((double) bytesRemaining) / splitSize > SPLIT_SLOP) {
-            String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
-            splits.add(new FileSplit(path, length - bytesRemaining, splitSize, splitHosts[0], splitHosts[1]));
+            SplitHosts splitHosts = SplitHosts.at(blkLocations, length - bytesRemaining);
+            splits.add(new FileSplit(path, length - bytesRemaining, splitSize, splitHosts.getHosts(), splitHosts.getCachedHosts()));
             bytesRemaining -= splitSize;
         }
         if (bytesRemaining != 0) {
-            String[][] splitHosts = getSplitHostsAndCachedHosts(blkLocations, length - bytesRemaining);
-            splits.add(new FileSplit(path, length - bytesRemaining, bytesRemaining, splitHosts[0], splitHosts[1]));
+            SplitHosts splitHosts = SplitHosts.at(blkLocations, length - bytesRemaining);
+            splits.add(new FileSplit(path, length - bytesRemaining, bytesRemaining, splitHosts.getHosts(), splitHosts.getCachedHosts()));
         }
         return splits.build();
     }
@@ -121,15 +121,6 @@ public class HudiSplitFactory
     private static boolean isSplitable(Path filename)
     {
         return !(filename instanceof PathWithBootstrapFileStatus);
-    }
-
-    private static String[][] getSplitHostsAndCachedHosts(BlockLocation[] blkLocations, long offset)
-            throws IOException
-    {
-        int startIndex = getBlockIndex(blkLocations, offset);
-
-        return new String[][] {blkLocations[startIndex].getHosts(),
-                blkLocations[startIndex].getCachedHosts()};
     }
 
     private static int getBlockIndex(BlockLocation[] blkLocations, long offset)
@@ -148,5 +139,34 @@ public class HudiSplitFactory
     {
         return (blkLocation.getOffset() <= offset) &&
                 (offset < blkLocation.getOffset() + blkLocation.getLength());
+    }
+
+    private static class SplitHosts
+    {
+        private final String[] hosts;
+        private final String[] cachedHosts;
+
+        private static SplitHosts at(BlockLocation[] blkLocations, long offset)
+                throws IOException
+        {
+            int index = getBlockIndex(blkLocations, offset);
+            return new SplitHosts(blkLocations[index].getHosts(), blkLocations[index].getCachedHosts());
+        }
+
+        private SplitHosts(String[] hosts, String[] cachedHosts)
+        {
+            this.hosts = hosts;
+            this.cachedHosts = cachedHosts;
+        }
+
+        public String[] getHosts()
+        {
+            return hosts;
+        }
+
+        public String[] getCachedHosts()
+        {
+            return cachedHosts;
+        }
     }
 }
