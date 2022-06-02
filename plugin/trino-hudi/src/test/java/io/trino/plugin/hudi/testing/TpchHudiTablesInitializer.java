@@ -93,20 +93,23 @@ public class TpchHudiTablesInitializer
             new Column("_hoodie_file_name", HIVE_STRING, Optional.empty()));
 
     private final HoodieTableType tableType;
+    private final List<TpchTable<?>> tpchTables;
     private final Configuration conf;
     private final CatalogSchemaName tpchCatalogSchema;
 
-    public TpchHudiTablesInitializer(HoodieTableType tableType)
+    public TpchHudiTablesInitializer(HoodieTableType tableType, List<TpchTable<?>> tables)
     {
-        this(tableType, new Configuration(false), TPCH_TINY);
+        this(tableType, tables, new Configuration(false), TPCH_TINY);
     }
 
     private TpchHudiTablesInitializer(
             HoodieTableType tableType,
+            List<TpchTable<?>> tpchTables,
             Configuration conf,
             CatalogSchemaName tpchCatalogSchema)
     {
         this.tableType = requireNonNull(tableType, "tableType is null");
+        this.tpchTables = requireNonNull(tpchTables, "tpchTables is null");
         this.conf = requireNonNull(conf, "conf is null");
         this.tpchCatalogSchema = requireNonNull(tpchCatalogSchema, "tpchCatalogSchema is null");
     }
@@ -120,7 +123,7 @@ public class TpchHudiTablesInitializer
     {
         queryRunner.installPlugin(new TpchPlugin());
         queryRunner.createCatalog(tpchCatalogSchema.getCatalogName(), "tpch", ImmutableMap.of());
-        for (TpchTable<?> table : TpchTable.getTables()) {
+        for (TpchTable<?> table : tpchTables) {
             load(table, queryRunner, metastore, hudiCatalogSchema, dataDir);
         }
     }
