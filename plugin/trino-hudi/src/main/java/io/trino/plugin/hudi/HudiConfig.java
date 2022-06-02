@@ -28,6 +28,7 @@ import javax.validation.constraints.NotNull;
 import java.util.List;
 
 import static com.google.common.base.Strings.nullToEmpty;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static java.util.Locale.ENGLISH;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
@@ -74,7 +75,7 @@ public class HudiConfig
     {
         this.columnsToHide = COMMA_SPLITTER.splitToStream(nullToEmpty(columnsToHide))
                 .map(s -> s.toLowerCase(ENGLISH))
-                .collect(ImmutableList.toImmutableList());
+                .collect(toImmutableList());
         return this;
     }
 

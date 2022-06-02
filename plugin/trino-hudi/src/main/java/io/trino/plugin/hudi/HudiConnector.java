@@ -17,7 +17,6 @@ package io.trino.plugin.hudi;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.bootstrap.LifeCycleManager;
-import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorMetadata;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
 import io.trino.plugin.hive.HiveTransactionHandle;
@@ -45,8 +44,6 @@ import static java.util.Objects.requireNonNull;
 public class HudiConnector
         implements Connector
 {
-    private static final Logger log = Logger.get(HudiConnector.class);
-
     private final LifeCycleManager lifeCycleManager;
     private final HudiTransactionManager transactionManager;
     private final ConnectorSplitManager splitManager;
