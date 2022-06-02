@@ -23,7 +23,7 @@ import io.trino.plugin.hive.util.AsyncQueue;
 import io.trino.plugin.hive.util.ThrottledAsyncQueue;
 import io.trino.plugin.hudi.query.HudiFileLister;
 import io.trino.plugin.hudi.query.HudiQueryMode;
-import io.trino.plugin.hudi.split.HudiSplitBackgroundLoader;
+import io.trino.plugin.hudi.split.HudiBackgroundSplitLoader;
 import io.trino.plugin.hudi.split.HudiSplitWeightProvider;
 import io.trino.plugin.hudi.split.SizeBasedSplitWeightProvider;
 import io.trino.spi.TrinoException;
@@ -96,7 +96,7 @@ public class HudiSplitSource
                 shouldSkipMetastoreForPartition);
 
         this.queue = new ThrottledAsyncQueue<>(maxSplitsPerSecond, maxOutstandingSplits, executor);
-        HudiSplitBackgroundLoader splitLoader = new HudiSplitBackgroundLoader(
+        HudiBackgroundSplitLoader splitLoader = new HudiBackgroundSplitLoader(
                 session,
                 fs,
                 tableHandle,

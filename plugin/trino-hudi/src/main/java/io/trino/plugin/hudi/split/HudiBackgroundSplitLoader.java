@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 import static java.util.Objects.requireNonNull;
 import static java.util.concurrent.CompletableFuture.runAsync;
 
-public class HudiSplitBackgroundLoader
+public class HudiBackgroundSplitLoader
         implements Runnable
 {
     private final ConnectorSession session;
@@ -44,7 +44,7 @@ public class HudiSplitBackgroundLoader
     private final ExecutorService executor;
     private final HudiSplitFactory hudiSplitFactory;
 
-    public HudiSplitBackgroundLoader(
+    public HudiBackgroundSplitLoader(
             ConnectorSession session,
             FileSystem fs,
             HudiTableHandle tableHandle,
