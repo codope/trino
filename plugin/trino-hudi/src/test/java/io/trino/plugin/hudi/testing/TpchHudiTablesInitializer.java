@@ -94,7 +94,7 @@ public class TpchHudiTablesInitializer
 
     private final HoodieTableType tableType;
     private final List<TpchTable<?>> tpchTables;
-    private final Configuration conf;
+    private final Configuration configuration;
     private final CatalogSchemaName tpchCatalogSchema;
 
     public TpchHudiTablesInitializer(HoodieTableType tableType, List<TpchTable<?>> tables)
@@ -105,12 +105,12 @@ public class TpchHudiTablesInitializer
     private TpchHudiTablesInitializer(
             HoodieTableType tableType,
             List<TpchTable<?>> tpchTables,
-            Configuration conf,
+            Configuration configuration,
             CatalogSchemaName tpchCatalogSchema)
     {
         this.tableType = requireNonNull(tableType, "tableType is null");
         this.tpchTables = requireNonNull(tpchTables, "tpchTables is null");
-        this.conf = requireNonNull(conf, "conf is null");
+        this.configuration = requireNonNull(configuration, "configuration is null");
         this.tpchCatalogSchema = requireNonNull(tpchCatalogSchema, "tpchCatalogSchema is null");
     }
 
@@ -203,7 +203,7 @@ public class TpchHudiTablesInitializer
                     .setBootstrapIndexClass(NoOpBootstrapIndex.class.getName())
                     .setPayloadClassName(HoodieAvroPayload.class.getName())
                     .setRecordKeyFields(FIELD_UUID)
-                    .initTable(conf, tablePath);
+                    .initTable(configuration, tablePath);
         }
         catch (IOException e) {
             throw new RuntimeException("Could not init table " + tableName);
@@ -222,7 +222,7 @@ public class TpchHudiTablesInitializer
                 .withEmbeddedTimelineServerEnabled(false)
                 .withMarkersType(MarkerType.DIRECT.name())
                 .build();
-        return new HoodieJavaWriteClient<>(new HoodieJavaEngineContext(conf), cfg);
+        return new HoodieJavaWriteClient<>(new HoodieJavaEngineContext(configuration), cfg);
     }
 
     private String getTablePath(TpchTable<?> table, String basePath)

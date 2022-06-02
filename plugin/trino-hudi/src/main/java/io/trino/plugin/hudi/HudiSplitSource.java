@@ -139,9 +139,9 @@ public class HudiSplitSource
         return queue.isFinished();
     }
 
-    private static HoodieTableMetaClient buildTableMetaClient(Configuration conf, String basePath)
+    private static HoodieTableMetaClient buildTableMetaClient(Configuration configuration, String basePath)
     {
-        HoodieTableMetaClient client = HoodieTableMetaClient.builder().setConf(conf).setBasePath(basePath).build();
+        HoodieTableMetaClient client = HoodieTableMetaClient.builder().setConf(configuration).setBasePath(basePath).build();
         client.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
         return client;
     }

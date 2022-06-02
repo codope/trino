@@ -191,9 +191,9 @@ public class HudiMetadata
     private boolean isHudiTable(ConnectorSession session, Table table)
     {
         String basePath = table.getStorage().getLocation();
-        Configuration conf = hdfsEnvironment.getConfiguration(new HdfsEnvironment.HdfsContext(session), new Path(basePath));
+        Configuration configuration = hdfsEnvironment.getConfiguration(new HdfsEnvironment.HdfsContext(session), new Path(basePath));
         try {
-            checkTableValidity(getFs(basePath, conf), new Path(basePath), new Path(basePath, METAFOLDER_NAME));
+            checkTableValidity(getFs(basePath, configuration), new Path(basePath), new Path(basePath, METAFOLDER_NAME));
         }
         catch (org.apache.hudi.exception.TableNotFoundException e) {
             return false;
