@@ -120,7 +120,7 @@ public class HudiConnectorFactory
             ConnectorNodePartitioningProvider connectorDistributionProvider = injector.getInstance(ConnectorNodePartitioningProvider.class);
             Set<SessionPropertiesProvider> sessionPropertiesProviders = injector.getInstance(Key.get(new TypeLiteral<Set<SessionPropertiesProvider>>() {}));
             HudiTableProperties hudiTableProperties = injector.getInstance(HudiTableProperties.class);
-            Optional<ConnectorAccessControl> hudiAccessControl = injector.getInstance(Key.get(new TypeLiteral<Optional<ConnectorAccessControl>>() {}));
+            ConnectorAccessControl accessControl = injector.getInstance(ConnectorAccessControl.class);
 
             return new HudiConnector(
                     lifeCycleManager,
@@ -131,7 +131,7 @@ public class HudiConnectorFactory
                     ImmutableSet.of(),
                     sessionPropertiesProviders,
                     hudiTableProperties.getTableProperties(),
-                    hudiAccessControl);
+                    accessControl);
         }
     }
 }

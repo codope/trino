@@ -35,7 +35,6 @@ import io.trino.spi.session.PropertyMetadata;
 import io.trino.spi.transaction.IsolationLevel;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -56,7 +55,7 @@ public class HudiConnector
     private final Set<SystemTable> systemTables;
     private final List<PropertyMetadata<?>> sessionProperties;
     private final List<PropertyMetadata<?>> tableProperties;
-    private final Optional<ConnectorAccessControl> accessControl;
+    private final ConnectorAccessControl accessControl;
 
     public HudiConnector(
             LifeCycleManager lifeCycleManager,
@@ -67,7 +66,7 @@ public class HudiConnector
             Set<SystemTable> systemTables,
             Set<SessionPropertiesProvider> sessionPropertiesProviders,
             List<PropertyMetadata<?>> tableProperties,
-            Optional<ConnectorAccessControl> accessControl)
+            ConnectorAccessControl accessControl)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
@@ -128,7 +127,7 @@ public class HudiConnector
     @Override
     public ConnectorAccessControl getAccessControl()
     {
-        return accessControl.orElseThrow(UnsupportedOperationException::new);
+        return accessControl;
     }
 
     @Override
@@ -157,11 +156,6 @@ public class HudiConnector
     @Override
     public final void shutdown()
     {
-        try {
-            lifeCycleManager.stop();
-        }
-        catch (Exception e) {
-            log.error(e, "Error shutting down connector");
-        }
+        lifeCycleManager.stop();
     }
 }
