@@ -40,11 +40,11 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hudi.common.model.HoodieTableType;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -212,7 +212,7 @@ public class HudiMetadata
         }
     }
 
-    private ConnectorTableMetadata getTableMetadata(SchemaTableName tableName, Set<String> columnsToHide)
+    private ConnectorTableMetadata getTableMetadata(SchemaTableName tableName, Collection<String> columnsToHide)
             throws TableNotFoundException
     {
         Table table = metastore.getTable(tableName.getSchemaName(), tableName.getTableName())

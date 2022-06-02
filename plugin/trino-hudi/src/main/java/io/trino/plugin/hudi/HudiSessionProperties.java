@@ -14,7 +14,6 @@
 
 package io.trino.plugin.hudi;
 
-import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import io.airlift.units.DataSize;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
@@ -25,18 +24,19 @@ import org.apache.hudi.common.model.HoodieFileFormat;
 
 import javax.inject.Inject;
 
+import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 
-import static com.google.common.base.Strings.nullToEmpty;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.trino.plugin.base.session.PropertyMetadataUtil.dataSizeProperty;
 import static io.trino.spi.StandardErrorCode.INVALID_SESSION_PROPERTY;
 import static io.trino.spi.session.PropertyMetadata.booleanProperty;
 import static io.trino.spi.session.PropertyMetadata.doubleProperty;
 import static io.trino.spi.session.PropertyMetadata.integerProperty;
 import static io.trino.spi.session.PropertyMetadata.stringProperty;
+import static io.trino.spi.type.VarcharType.VARCHAR;
 import static java.lang.String.format;
-import static java.util.stream.Collectors.toUnmodifiableSet;
+import static java.util.Locale.ENGLISH;
 
 public class HudiSessionProperties
         implements SessionPropertiesProvider
@@ -54,8 +54,6 @@ public class HudiSessionProperties
     private static final String STANDARD_SPLIT_WEIGHT_SIZE = "standard_split_weight_size";
     private static final String MINIMUM_ASSIGNED_SPLIT_WEIGHT = "minimum_assigned_split_weight";
 
-    private static final Splitter COMMA_SPLITTER = Splitter.on(",").omitEmptyStrings().trimResults();
-
     private final List<PropertyMetadata<?>> sessionProperties;
 
     @Inject
@@ -67,11 +65,17 @@ public class HudiSessionProperties
                         "Currently, only Parquet is supported",
                         hudiConfig.getBaseFileFormat(),
                         false),
-                stringProperty(
+                new PropertyMetadata<>(
                         COLUMNS_TO_HIDE,
-                        "Columns to hide",
+                        "List of column names that will be hidden",
+                        VARCHAR,
+                        List.class,
                         hudiConfig.getColumnsToHide(),
-                        false),
+                        false,
+                        value -> ((Collection<?>) value).stream()
+                                .map(name -> ((String) name).toLowerCase(ENGLISH))
+                                .collect(toImmutableList()),
+                        value -> value),
                 booleanProperty(
                         METADATA_ENABLED,
                         "For Hudi tables prefer to fetch the list of files from its metadata",
@@ -140,10 +144,10 @@ public class HudiSessionProperties
         return session.getProperty(BASE_FILE_FORMAT, HoodieFileFormat.class);
     }
 
-    public static Set<String> getColumnsToHide(ConnectorSession session)
+    public static List<String> getColumnsToHide(ConnectorSession session)
     {
-        String columnsToHide = session.getProperty(COLUMNS_TO_HIDE, String.class);
-        return COMMA_SPLITTER.splitToStream(nullToEmpty(columnsToHide)).collect(toUnmodifiableSet());
+        //noinspection unchecked
+        return (List<String>) session.getProperty(COLUMNS_TO_HIDE, List.class);
     }
 
     public static boolean isHudiMetadataEnabled(ConnectorSession session)

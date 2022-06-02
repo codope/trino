@@ -14,6 +14,8 @@
 
 package io.trino.plugin.hudi;
 
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
 import io.airlift.units.DataSize;
@@ -23,13 +25,18 @@ import javax.validation.constraints.DecimalMin;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 
+import java.util.List;
+
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
+import static java.util.Locale.ENGLISH;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 
 public class HudiConfig
 {
+    private static final Splitter COMMA_SPLITTER = Splitter.on(",").omitEmptyStrings().trimResults();
+
     private String baseFileFormat = PARQUET.name();
-    private String columnsToHide;
+    private List<String> columnsToHide;
     private boolean metadataEnabled;
     private boolean shouldSkipMetaStoreForPartition;
     private boolean shouldUseParquetColumnNames = true;
@@ -56,7 +63,7 @@ public class HudiConfig
         return this;
     }
 
-    public String getColumnsToHide()
+    public List<String> getColumnsToHide()
     {
         return columnsToHide;
     }
@@ -64,7 +71,9 @@ public class HudiConfig
     @Config("hudi.columns-to-hide")
     public HudiConfig setColumnsToHide(String columnsToHide)
     {
-        this.columnsToHide = columnsToHide;
+        this.columnsToHide = COMMA_SPLITTER.splitToStream(columnsToHide)
+                .map(s -> s.toLowerCase(ENGLISH))
+                .collect(ImmutableList.toImmutableList());
         return this;
     }
 
