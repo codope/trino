@@ -41,7 +41,7 @@ public final class HudiPageSourceFactory
             case PARQUET:
                 return new HudiParquetPageSourceCreator(hudiConfig, hdfsEnvironment, stats, timeZone, context);
             default:
-                throw new HoodieIOException(format("Base file format %s is not supported yet", baseFileFormat));
+                throw new HoodieIOException(format("Base file format %s is not supported", baseFileFormat));
         }
     }
 }

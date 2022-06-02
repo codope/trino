@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import static io.trino.plugin.base.util.Closables.closeAllSuppress;
-import static io.trino.plugin.hudi.HudiErrorCode.HUDI_BAD_DATA;
+import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static java.util.Objects.requireNonNull;
 
 public class HudiPageSource
@@ -97,7 +97,7 @@ public class HudiPageSource
         }
         catch (RuntimeException e) {
             closeAllSuppress(e, this);
-            throw new TrinoException(HUDI_BAD_DATA, e);
+            throw new TrinoException(GENERIC_INTERNAL_ERROR, e);
         }
     }
 

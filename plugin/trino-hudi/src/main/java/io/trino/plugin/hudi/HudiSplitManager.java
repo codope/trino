@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
+import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
@@ -92,11 +93,10 @@ public class HudiSplitManager
                 .orElseThrow(() -> new TableNotFoundException(schemaTableName(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())));
         final FileSystem fs;
         try {
-            HdfsEnvironment.HdfsContext context = new HdfsEnvironment.HdfsContext(session);
-            fs = hdfsEnvironment.getFileSystem(context, new Path(table.getStorage().getLocation()));
+            fs = hdfsEnvironment.getFileSystem(new HdfsEnvironment.HdfsContext(session), new Path(table.getStorage().getLocation()));
         }
         catch (IOException e) {
-            throw new TrinoException(HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT, "Cannot get filesystem", e);
+            throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Cannot get filesystem", e);
         }
         HudiSplitSource splitSource = new HudiSplitSource(
                 session,

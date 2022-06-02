@@ -197,7 +197,9 @@ public class HudiPageSourceProvider
         catch (IllegalArgumentException | DateTimeParseException e) {
             throw new TrinoException(HUDI_INVALID_PARTITION_VALUE,
                     format("Can not parse partition value '%s' of type '%s' for partition column '%s'",
-                            partitionValue, partitionDataType, partitionColumnName));
+                            partitionValue,
+                            partitionDataType,
+                            partitionColumnName));
         }
     }
 }
