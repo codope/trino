@@ -27,6 +27,7 @@ import javax.validation.constraints.NotNull;
 
 import java.util.List;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static java.util.Locale.ENGLISH;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
@@ -36,7 +37,7 @@ public class HudiConfig
     private static final Splitter COMMA_SPLITTER = Splitter.on(",").omitEmptyStrings().trimResults();
 
     private String baseFileFormat = PARQUET.name();
-    private List<String> columnsToHide;
+    private List<String> columnsToHide = ImmutableList.of();
     private boolean metadataEnabled;
     private boolean shouldSkipMetaStoreForPartition;
     private boolean shouldUseParquetColumnNames = true;
@@ -71,7 +72,7 @@ public class HudiConfig
     @Config("hudi.columns-to-hide")
     public HudiConfig setColumnsToHide(String columnsToHide)
     {
-        this.columnsToHide = COMMA_SPLITTER.splitToStream(columnsToHide)
+        this.columnsToHide = COMMA_SPLITTER.splitToStream(nullToEmpty(columnsToHide))
                 .map(s -> s.toLowerCase(ENGLISH))
                 .collect(ImmutableList.toImmutableList());
         return this;

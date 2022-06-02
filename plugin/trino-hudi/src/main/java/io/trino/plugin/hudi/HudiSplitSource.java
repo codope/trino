@@ -52,15 +52,13 @@ import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeights
 import static io.trino.plugin.hudi.HudiSessionProperties.shouldSkipMetaStoreForPartition;
 import static io.trino.plugin.hudi.query.HudiFileListerFactory.buildHudiFileLister;
 import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
-import static java.util.concurrent.CompletableFuture.runAsync;
 import static java.util.stream.Collectors.toList;
 
 public class HudiSplitSource
         implements ConnectorSplitSource
 {
     private final AsyncQueue<ConnectorSplit> queue;
-
-    private TrinoException trinoException;
+    private volatile TrinoException trinoException;
 
     public HudiSplitSource(
             ConnectorSession session,
@@ -103,14 +101,13 @@ public class HudiSplitSource
                 hudiFileLister,
                 queue,
                 executor,
-                createSplitWeightProvider(session));
-        runAsync(splitLoader, executor)
-                .exceptionally(throwable -> {
+                createSplitWeightProvider(session),
+                throwable -> {
                     trinoException = new TrinoException(GENERIC_INTERNAL_ERROR,
                             "Failed to generate splits for " + table.getTableName(), throwable);
                     queue.finish();
-                    return null;
                 });
+        splitLoader.start();
     }
 
     @Override
