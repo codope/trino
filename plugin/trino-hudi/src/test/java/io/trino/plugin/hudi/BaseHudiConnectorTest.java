@@ -15,7 +15,7 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableMap;
-import io.trino.plugin.hudi.testing.TpchHudiDataLoader;
+import io.trino.plugin.hudi.testing.TpchHudiTablesInitializer;
 import io.trino.testing.BaseConnectorTest;
 import io.trino.testing.QueryRunner;
 import io.trino.testing.TestingConnectorBehavior;
@@ -36,7 +36,7 @@ public abstract class BaseHudiConnectorTest
         return HudiQueryRunner.createHudiQueryRunner(
                 ImmutableMap.of(),
                 ImmutableMap.of("hudi.columns-to-hide", columnsToHide()),
-                new TpchHudiDataLoader(getHoodieTableType()));
+                new TpchHudiTablesInitializer(getHoodieTableType()));
     }
 
     @Override
@@ -79,7 +79,7 @@ public abstract class BaseHudiConnectorTest
     {
         List<String> columns = new ArrayList<>(HOODIE_META_COLUMNS.size() + 1);
         columns.addAll(HOODIE_META_COLUMNS);
-        columns.add(TpchHudiDataLoader.FIELD_UUID);
+        columns.add(TpchHudiTablesInitializer.FIELD_UUID);
         return String.join(",", columns);
     }
 }

@@ -18,9 +18,9 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.spi.connector.CatalogSchemaName;
 import io.trino.testing.QueryRunner;
 
-public interface HudiDataLoader
+public interface HudiTablesInitializer
 {
-    void load(
+    void initializeTables(
             QueryRunner queryRunner,
             HiveMetastore metastore,
             CatalogSchemaName hudiCatalogSchema,

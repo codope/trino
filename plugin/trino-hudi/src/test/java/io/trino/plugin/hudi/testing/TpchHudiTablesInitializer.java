@@ -78,13 +78,13 @@ import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toUnmodifiableList;
 import static org.apache.hadoop.hive.metastore.TableType.EXTERNAL_TABLE;
 
-public class TpchHudiDataLoader
-        implements HudiDataLoader
+public class TpchHudiTablesInitializer
+        implements HudiTablesInitializer
 {
     public static final String FIELD_UUID = "_uuid";
     private static final CatalogSchemaName TPCH_TINY = new CatalogSchemaName("tpch", "tiny");
     private static final String PARTITION_PATH = "";
-    private static final Logger log = Logger.get(TpchHudiDataLoader.class);
+    private static final Logger log = Logger.get(TpchHudiTablesInitializer.class);
     private static final List<Column> HUDI_META_COLUMNS = ImmutableList.of(
             new Column("_hoodie_commit_time", HIVE_STRING, Optional.empty()),
             new Column("_hoodie_commit_seqno", HIVE_STRING, Optional.empty()),
@@ -96,12 +96,12 @@ public class TpchHudiDataLoader
     private final Configuration conf;
     private final CatalogSchemaName tpchCatalogSchema;
 
-    public TpchHudiDataLoader(HoodieTableType tableType)
+    public TpchHudiTablesInitializer(HoodieTableType tableType)
     {
         this(tableType, new Configuration(false), TPCH_TINY);
     }
 
-    private TpchHudiDataLoader(
+    private TpchHudiTablesInitializer(
             HoodieTableType tableType,
             Configuration conf,
             CatalogSchemaName tpchCatalogSchema)
@@ -112,7 +112,7 @@ public class TpchHudiDataLoader
     }
 
     @Override
-    public void load(
+    public void initializeTables(
             QueryRunner queryRunner,
             HiveMetastore metastore,
             CatalogSchemaName hudiCatalogSchema,
@@ -238,7 +238,7 @@ public class TpchHudiDataLoader
                 .collect(toUnmodifiableList());
         List<Function<Object, Object>> columnConverters = columns.stream()
                 .map(TpchColumn::getType)
-                .map(TpchHudiDataLoader::avroEncoderOf)
+                .map(TpchHudiTablesInitializer::avroEncoderOf)
                 .collect(toUnmodifiableList());
 
         return row -> {

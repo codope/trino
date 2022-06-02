@@ -54,13 +54,13 @@ import static io.trino.plugin.hive.HiveType.HIVE_STRING;
 import static org.apache.hudi.common.model.HoodieTableType.COPY_ON_WRITE;
 import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
 
-public class ResourceHudiDataLoader
-        implements HudiDataLoader
+public class ResourceHudiTablesInitializer
+        implements HudiTablesInitializer
 {
-    public ResourceHudiDataLoader() {}
+    public ResourceHudiTablesInitializer() {}
 
     @Override
-    public void load(
+    public void initializeTables(
             QueryRunner queryRunner,
             HiveMetastore metastore,
             CatalogSchemaName hudiCatalogSchema,

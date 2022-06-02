@@ -15,15 +15,15 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableMap;
-import io.trino.plugin.hudi.testing.ResourceHudiDataLoader;
+import io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer;
 import io.trino.testing.AbstractTestQueryFramework;
 import io.trino.testing.QueryRunner;
 import org.testng.annotations.Test;
 
 import static io.trino.plugin.hudi.HudiQueryRunner.createHudiQueryRunner;
-import static io.trino.plugin.hudi.testing.ResourceHudiDataLoader.TestingTable.HUDI_NON_PART_COW;
-import static io.trino.plugin.hudi.testing.ResourceHudiDataLoader.TestingTable.STOCK_TICKS_COW;
-import static io.trino.plugin.hudi.testing.ResourceHudiDataLoader.TestingTable.STOCK_TICKS_MOR;
+import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.HUDI_NON_PART_COW;
+import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.STOCK_TICKS_COW;
+import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.STOCK_TICKS_MOR;
 
 public class TestHudiSmokeTest
         extends AbstractTestQueryFramework
@@ -32,7 +32,7 @@ public class TestHudiSmokeTest
     protected QueryRunner createQueryRunner()
             throws Exception
     {
-        return createHudiQueryRunner(ImmutableMap.of(), ImmutableMap.of(), new ResourceHudiDataLoader());
+        return createHudiQueryRunner(ImmutableMap.of(), ImmutableMap.of(), new ResourceHudiTablesInitializer());
     }
 
     @Test
