@@ -173,7 +173,7 @@ public class TrinoFileSystemCache
         //
         // The value of NO_WRAPPER_KEY in conf is a comma separated string of class names
         // that will not be wrapped by FileSystemWrapper.
-        if (original.getClass().getSimpleName().equals("HoodieWrapperFileSystem")) {
+        if (COMMA_SPLITTER.splitToList(conf.get(NO_WRAPPER_KEY, "")).contains(original.getClass().getName())) {
             return original;
         }
 

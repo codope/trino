@@ -72,6 +72,7 @@ import static io.trino.plugin.hive.HiveType.HIVE_DOUBLE;
 import static io.trino.plugin.hive.HiveType.HIVE_INT;
 import static io.trino.plugin.hive.HiveType.HIVE_LONG;
 import static io.trino.plugin.hive.HiveType.HIVE_STRING;
+import static io.trino.plugin.hive.fs.TrinoFileSystemCache.NO_WRAPPER_KEY;
 import static io.trino.plugin.hive.metastore.PrincipalPrivileges.NO_PRIVILEGES;
 import static java.util.Collections.unmodifiableList;
 import static java.util.Objects.requireNonNull;
@@ -112,6 +113,8 @@ public class TpchHudiTablesInitializer
         this.tpchTables = requireNonNull(tpchTables, "tpchTables is null");
         this.configuration = requireNonNull(configuration, "configuration is null");
         this.tpchCatalogSchema = requireNonNull(tpchCatalogSchema, "tpchCatalogSchema is null");
+
+        configuration.set(NO_WRAPPER_KEY, "org.apache.hudi.common.fs.HoodieWrapperFileSystem");
     }
 
     @Override
