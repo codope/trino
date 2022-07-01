@@ -79,6 +79,7 @@ import static java.util.Objects.isNull;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toMap;
+import static org.apache.hudi.common.model.HoodieFileFormat.HOODIE_LOG;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
 
 public class HudiPageSourceProvider
@@ -107,6 +108,9 @@ public class HudiPageSourceProvider
                 .put(
                         PARQUET,
                         buildHudiPageSourceCreator(PARQUET, hudiConfig, hdfsEnvironment, fileFormatDataSourceStats, timeZone, context))
+                .put(
+                        HOODIE_LOG,
+                        buildHudiPageSourceCreator(HOODIE_LOG, hudiConfig, hdfsEnvironment, fileFormatDataSourceStats, timeZone, context))
                 .buildOrThrow();
     }
 

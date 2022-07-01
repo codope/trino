@@ -74,14 +74,14 @@ public final class HudiUtil
         if (extension.equals(HoodieFileFormat.PARQUET.getFileExtension())) {
             return HoodieFileFormat.PARQUET;
         }
-        if (extension.equals(HoodieFileFormat.HOODIE_LOG.getFileExtension())) {
-            return HoodieFileFormat.HOODIE_LOG;
-        }
         if (extension.equals(HoodieFileFormat.ORC.getFileExtension())) {
             return HoodieFileFormat.ORC;
         }
         if (extension.equals(HoodieFileFormat.HFILE.getFileExtension())) {
             return HoodieFileFormat.HFILE;
+        }
+        if (path.contains(HoodieFileFormat.HOODIE_LOG.getFileExtension())) {
+            return HoodieFileFormat.HOODIE_LOG;
         }
         throw new HoodieIOException("Hoodie InputFormat not implemented for base file of type " + extension);
     }

@@ -40,6 +40,8 @@ public final class HudiPageSourceFactory
         switch (baseFileFormat) {
             case PARQUET:
                 return new HudiParquetPageSourceCreator(hudiConfig, hdfsEnvironment, stats, timeZone, context);
+            case HOODIE_LOG:
+                return new HudiLogPageSourceCreator(hudiConfig, hdfsEnvironment, stats, timeZone);
             default:
                 throw new HoodieIOException(format("Base file format %s is not supported", baseFileFormat));
         }

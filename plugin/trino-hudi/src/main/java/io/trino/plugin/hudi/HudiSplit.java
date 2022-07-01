@@ -11,7 +11,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package io.trino.plugin.hudi;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -31,9 +30,8 @@ import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.util.Objects.requireNonNull;
 
-public class HudiSplit
-        implements ConnectorSplit
-{
+public class HudiSplit implements ConnectorSplit {
+
     private final String path;
     private final long start;
     private final long length;
@@ -42,6 +40,7 @@ public class HudiSplit
     private final TupleDomain<HiveColumnHandle> predicate;
     private final List<HivePartitionKey> partitionKeys;
     private final SplitWeight splitWeight;
+    private final String basePath;
 
     @JsonCreator
     public HudiSplit(
@@ -52,12 +51,12 @@ public class HudiSplit
             @JsonProperty("addresses") List<HostAddress> addresses,
             @JsonProperty("predicate") TupleDomain<HiveColumnHandle> predicate,
             @JsonProperty("partitionKeys") List<HivePartitionKey> partitionKeys,
-            @JsonProperty("splitWeight") SplitWeight splitWeight)
-    {
+            @JsonProperty("splitWeight") SplitWeight splitWeight,
+            @JsonProperty("basePath") String basePath) {
         checkArgument(start >= 0, "start must be positive");
         checkArgument(length >= 0, "length must be positive");
         checkArgument(start + length <= fileSize, "fileSize must be at least start + length");
-
+        this.basePath = requireNonNull(basePath, "basePath is null");
         this.path = requireNonNull(path, "path is null");
         this.start = start;
         this.length = length;
@@ -68,22 +67,20 @@ public class HudiSplit
         this.splitWeight = requireNonNull(splitWeight, "splitWeight is null");
     }
 
+
     @Override
-    public boolean isRemotelyAccessible()
-    {
+    public boolean isRemotelyAccessible() {
         return true;
     }
 
     @JsonProperty
     @Override
-    public List<HostAddress> getAddresses()
-    {
+    public List<HostAddress> getAddresses() {
         return addresses;
     }
 
     @Override
-    public Object getInfo()
-    {
+    public Object getInfo() {
         return ImmutableMap.builder()
                 .put("path", path)
                 .put("start", start)
@@ -94,50 +91,48 @@ public class HudiSplit
 
     @JsonProperty
     @Override
-    public SplitWeight getSplitWeight()
-    {
+    public SplitWeight getSplitWeight() {
         return splitWeight;
     }
 
     @JsonProperty
-    public String getPath()
-    {
+    public String getBasePath() {
+        return basePath;
+    }
+
+
+    @JsonProperty
+    public String getPath() {
         return path;
     }
 
     @JsonProperty
-    public long getStart()
-    {
+    public long getStart() {
         return start;
     }
 
     @JsonProperty
-    public long getLength()
-    {
+    public long getLength() {
         return length;
     }
 
     @JsonProperty
-    public long getFileSize()
-    {
+    public long getFileSize() {
         return fileSize;
     }
 
     @JsonProperty
-    public TupleDomain<HiveColumnHandle> getPredicate()
-    {
+    public TupleDomain<HiveColumnHandle> getPredicate() {
         return predicate;
     }
 
     @JsonProperty
-    public List<HivePartitionKey> getPartitionKeys()
-    {
+    public List<HivePartitionKey> getPartitionKeys() {
         return partitionKeys;
     }
 
     @Override
-    public String toString()
-    {
+    public String toString() {
         return toStringHelper(this)
                 .addValue(path)
                 .addValue(start)

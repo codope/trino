@@ -72,7 +72,8 @@ public class HudiSplitFactory
                         ImmutableList.of(),
                         hudiTableHandle.getRegularPredicates(),
                         partitionKeys,
-                        hudiSplitWeightProvider.calculateSplitWeight(fileSplit.getLength())));
+                        hudiSplitWeightProvider.calculateSplitWeight(fileSplit.getLength()),
+                        hudiTableHandle.getBasePath()));
     }
 
     private List<FileSplit> createSplits(FileStatus fileStatus)
