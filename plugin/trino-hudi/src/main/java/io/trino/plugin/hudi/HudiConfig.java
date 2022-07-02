@@ -32,6 +32,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static java.util.Locale.ENGLISH;
 import static org.apache.hudi.common.model.HoodieFileFormat.PARQUET;
+import static org.apache.hudi.hadoop.config.HoodieRealtimeConfig.*;
 
 public class HudiConfig
 {
@@ -51,6 +52,59 @@ public class HudiConfig
     private double minimumAssignedSplitWeight = 0.05;
     private int maxSplitsPerSecond = Integer.MAX_VALUE;
     private int maxOutstandingSplits = 1000;
+    private boolean compactionLazyBlockReadEnabled = Boolean.parseBoolean(DEFAULT_COMPACTION_LAZY_BLOCK_READ_ENABLED);
+    private int hoodieMemoryDfsBufferMaxSize = DEFAULT_MAX_DFS_STREAM_BUFFER_SIZE;
+    // 10 * 1024 * 1024
+    private long maxMemorySizeInBytes = 10485760L;
+    private String spillableMapBasePath = DEFAULT_SPILLABLE_MAP_BASE_PATH;
+
+    public long getMaxMemorySizeInBytes()
+    {
+        return maxMemorySizeInBytes;
+    }
+
+    @Config("hudi.max.memory.size.in.bytes")
+    public HudiConfig setMaxMemorySizeInBytes(long maxMemorySizeInBytes)
+    {
+        this.maxMemorySizeInBytes = maxMemorySizeInBytes;
+        return this;
+    }
+
+    public String getSpillableMapBasePath()
+    {
+        return spillableMapBasePath;
+    }
+
+    @Config("hudi.hoodie.memory.spillable.map.path")
+    public HudiConfig setSpillableMapBasePath(String spillableMapBasePath)
+    {
+        this.spillableMapBasePath = spillableMapBasePath;
+        return this;
+    }
+
+    public int getHoodieMemoryDfsBufferMaxSize()
+    {
+        return hoodieMemoryDfsBufferMaxSize;
+    }
+
+    @Config("hudi.hoodie.memory.dfs.buffer.max.size")
+    public HudiConfig setHoodieMemoryDfsBufferMaxSize(int hoodieMemoryDfsBufferMaxSize)
+    {
+        this.hoodieMemoryDfsBufferMaxSize = hoodieMemoryDfsBufferMaxSize;
+        return this;
+    }
+
+    public boolean isCompactionLazyBlockReadEnabled()
+    {
+        return compactionLazyBlockReadEnabled;
+    }
+
+    @Config("hudi.compaction.lazy.block.read.enabled")
+    public HudiConfig setCompactionLazyBlockReadEnabled(boolean compactionLazyBlockReadEnabled)
+    {
+        this.compactionLazyBlockReadEnabled = compactionLazyBlockReadEnabled;
+        return this;
+    }
 
     @NotNull
     public String getBaseFileFormat()

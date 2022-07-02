@@ -50,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static io.trino.plugin.hudi.partition.HudiPartitionInfoFactory.buildHudiPartitionInfo;
 import static java.lang.String.format;
@@ -174,16 +175,17 @@ public class HudiReadOptimizedFileLister
     @Override
     public List<FileStatus> listStatus(HudiPartitionInfo partitionInfo)
     {
-        return fileSystemView.getLatestBaseFiles(partitionInfo.getRelativePartitionPath())
-                .map(baseFile -> {
-                    try {
-                        return HoodieInputFormatUtils.getFileStatus(baseFile);
-                    }
-                    catch (IOException e) {
-                        throw new HoodieIOException("Error getting file status of " + baseFile.getPath(), e);
-                    }
-                })
-                .collect(Collectors.toList());
+        String latestCommit = fileSystemView.getLastInstant().get().getTimestamp();
+        return fileSystemView.getLatestMergedFileSlicesBeforeOrOn(partitionInfo.getRelativePartitionPath(), latestCommit).flatMap(fileSlice -> {
+            Stream.Builder<FileStatus> builder = Stream.builder();
+            if (fileSlice.getBaseFile().isPresent()) {
+                builder.add(fileSlice.getBaseFile().get().getFileStatus());
+            }
+            fileSlice.getLogFiles().forEach(logFile -> {
+                builder.add(logFile.getFileStatus());
+            });
+            return builder.build();
+        }).collect(Collectors.toList());
     }
 
     @VisibleForTesting

@@ -99,7 +99,7 @@ public class HudiSplitManager
         catch (IOException e) {
             throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Cannot get filesystem", e);
         }
-        HudiSplitSource splitSource = new HudiSplitSource(
+        HudiSplitSource splitSource = hdfsEnvironment.doAs(session.getIdentity(),() -> new HudiSplitSource(
                 session,
                 metastore,
                 table,
@@ -108,7 +108,7 @@ public class HudiSplitManager
                 partitionColumnHandles,
                 executor,
                 maxSplitsPerSecond,
-                maxOutstandingSplits);
+                maxOutstandingSplits));
         return new ClassLoaderSafeConnectorSplitSource(splitSource, HudiSplitManager.class.getClassLoader());
     }
 }

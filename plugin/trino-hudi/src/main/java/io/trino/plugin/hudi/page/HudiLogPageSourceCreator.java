@@ -67,13 +67,13 @@ public class HudiLogPageSourceCreator
                         .withLogFilePaths(List.of(hudiSplit.getPath()))
                         .withReaderSchema(tableAvroSchema)
                         .withLatestInstantTime(latestInstantTime)
-                        .withReadBlocksLazily(Boolean.parseBoolean(HoodieRealtimeConfig.DEFAULT_COMPACTION_LAZY_BLOCK_READ_ENABLED))
                         .withReverseReader(false)
-                        .withBufferSize(HoodieRealtimeConfig.DEFAULT_MAX_DFS_STREAM_BUFFER_SIZE)
-                        .withMaxMemorySizeInBytes(10 * 1024 * 1024L)
-                        .withSpillableMapBasePath(HoodieRealtimeConfig.DEFAULT_SPILLABLE_MAP_BASE_PATH)
-                        .withInstantRange(Option.empty())
                         .withOperationField(true)
+                        .withInstantRange(Option.empty())
+                        .withReadBlocksLazily(hudiConfig.isCompactionLazyBlockReadEnabled())
+                        .withBufferSize(hudiConfig.getHoodieMemoryDfsBufferMaxSize())
+                        .withMaxMemorySizeInBytes(hudiConfig.getMaxMemorySizeInBytes())
+                        .withSpillableMapBasePath(hudiConfig.getSpillableMapBasePath())
                         .build();
             });
             return new HudiLogConnectorPageSource(schema.get(), collect, hoodieMergedLogRecordScanner);
