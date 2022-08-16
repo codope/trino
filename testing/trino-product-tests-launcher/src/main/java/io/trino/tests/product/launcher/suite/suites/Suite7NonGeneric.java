@@ -24,6 +24,7 @@ import io.trino.tests.product.launcher.env.environment.EnvSinglenodeKerberosHdfs
 import io.trino.tests.product.launcher.env.environment.EnvSinglenodeMysql;
 import io.trino.tests.product.launcher.env.environment.EnvSinglenodePostgresql;
 import io.trino.tests.product.launcher.env.environment.EnvSinglenodeSparkHive;
+import io.trino.tests.product.launcher.env.environment.EnvSinglenodeSparkHudi;
 import io.trino.tests.product.launcher.env.environment.EnvSinglenodeSparkIceberg;
 import io.trino.tests.product.launcher.env.environment.EnvSinglenodeSqlserver;
 import io.trino.tests.product.launcher.env.environment.EnvTwoKerberosHives;
@@ -62,6 +63,10 @@ public class Suite7NonGeneric
                         .build(),
                 testOnEnvironment(EnvSinglenodeSparkHive.class)
                         .withGroups("configured_features", "hive_spark")
+                        .build(),
+                testOnEnvironment(EnvSinglenodeSparkHudi.class)
+                        .withGroups("configured_features", "hudi")
+                        .withExcludedGroups("storage_formats")
                         .build(),
                 testOnEnvironment(EnvSinglenodeSparkIceberg.class)
                         .withGroups("configured_features", "iceberg")
