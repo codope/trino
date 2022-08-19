@@ -351,6 +351,12 @@ public class TrinoS3FileSystem
     }
 
     @Override
+    public String getScheme()
+    {
+        return uri.getScheme();
+    }
+
+    @Override
     public URI getUri()
     {
         return uri;
