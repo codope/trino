@@ -14,8 +14,8 @@
 
 package io.trino.plugin.hudi.page;
 
-import io.trino.hdfs.HdfsEnvironment;
 import io.trino.plugin.hive.FileFormatDataSourceStats;
+import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hudi.HudiConfig;
 import io.trino.plugin.hudi.HudiSplit;

@@ -18,12 +18,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import io.airlift.log.Logger;
 import io.airlift.log.Logging;
-import io.trino.hdfs.DynamicHdfsConfiguration;
-import io.trino.hdfs.HdfsConfig;
-import io.trino.hdfs.HdfsConfigurationInitializer;
-import io.trino.hdfs.HdfsContext;
-import io.trino.hdfs.HdfsEnvironment;
-import io.trino.hdfs.authentication.NoHdfsAuthentication;
+import io.trino.plugin.hive.HdfsConfig;
+import io.trino.plugin.hive.HdfsConfigurationInitializer;
+import io.trino.plugin.hive.HdfsEnvironment;
+import io.trino.plugin.hive.HdfsEnvironment.HdfsContext;
+import io.trino.plugin.hive.HiveHdfsConfiguration;
+import io.trino.plugin.hive.authentication.NoHdfsAuthentication;
 import io.trino.plugin.hive.containers.HiveMinioDataLake;
 import io.trino.plugin.hive.metastore.Database;
 import io.trino.plugin.hive.metastore.HiveMetastore;
@@ -122,7 +122,7 @@ public final class S3HudiQueryRunner
 
     private static HdfsEnvironment getHdfsEnvironment(HiveMinioDataLake hiveMinioDataLake)
     {
-        DynamicHdfsConfiguration dynamicHdfsConfiguration = new DynamicHdfsConfiguration(
+        HiveHdfsConfiguration dynamicHdfsConfiguration = new HiveHdfsConfiguration(
                 new HdfsConfigurationInitializer(
                         new HdfsConfig()
                                 .setSocksProxy(SOCKS_PROXY.orElse(null)),

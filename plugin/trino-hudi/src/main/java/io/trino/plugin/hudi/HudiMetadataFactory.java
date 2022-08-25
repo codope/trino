@@ -14,7 +14,7 @@
 
 package io.trino.plugin.hudi;
 
-import io.trino.hdfs.HdfsEnvironment;
+import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.HiveMetastoreFactory;
 import io.trino.spi.security.ConnectorIdentity;

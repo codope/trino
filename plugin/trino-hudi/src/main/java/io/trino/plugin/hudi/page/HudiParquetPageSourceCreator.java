@@ -15,7 +15,6 @@
 package io.trino.plugin.hudi.page;
 
 import com.google.common.collect.ImmutableList;
-import io.trino.hdfs.HdfsEnvironment;
 import io.trino.parquet.Field;
 import io.trino.parquet.ParquetCorruptionException;
 import io.trino.parquet.ParquetDataSource;
@@ -25,6 +24,7 @@ import io.trino.parquet.RichColumnDescriptor;
 import io.trino.parquet.predicate.Predicate;
 import io.trino.parquet.reader.ParquetReader;
 import io.trino.plugin.hive.FileFormatDataSourceStats;
+import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.ReaderColumns;
 import io.trino.plugin.hive.parquet.HdfsParquetDataSource;

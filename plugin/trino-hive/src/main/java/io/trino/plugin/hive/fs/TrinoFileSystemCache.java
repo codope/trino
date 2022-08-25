@@ -347,7 +347,7 @@ public class TrinoFileSystemCache
         {
             return getRawFileSystem().getScheme();
         }
-        
+
         @Override
         public FSDataOutputStream append(Path f, int bufferSize, Progressable progress)
                 throws IOException
