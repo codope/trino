@@ -159,7 +159,7 @@ public class HudiPageSourceProvider
             String partitionValue,
             TypeSignature partitionDataType)
     {
-        if (isNull(partitionValue)) {
+        if (isNull(partitionValue) || partitionValue.equals("\\N")) {
             return Optional.empty();
         }
 
