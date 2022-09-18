@@ -18,22 +18,28 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import io.airlift.slice.SizeOf;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.spi.HostAddress;
 import io.trino.spi.SplitWeight;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.predicate.TupleDomain;
+import org.openjdk.jol.info.ClassLayout;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
+import static io.airlift.slice.SizeOf.estimatedSizeOf;
 import static java.util.Objects.requireNonNull;
 
 public class HudiSplit
         implements ConnectorSplit
 {
+    private static final int INSTANCE_SIZE = ClassLayout.parseClass(HudiSplit.class).instanceSize();
+
     private final String path;
     private final long start;
     private final long length;
@@ -133,6 +139,19 @@ public class HudiSplit
     public List<HivePartitionKey> getPartitionKeys()
     {
         return partitionKeys;
+    }
+
+    @Override
+    public long getRetainedSizeInBytes()
+    {
+        return INSTANCE_SIZE
+                + estimatedSizeOf(path)
+                + estimatedSizeOf(addresses, HostAddress::getRetainedSizeInBytes)
+                + splitWeight.getRetainedSizeInBytes()
+                + estimatedSizeOf(
+                partitionKeys.stream().collect(Collectors.toMap(HivePartitionKey::getName, HivePartitionKey::getName)),
+                SizeOf::estimatedSizeOf,
+                SizeOf::estimatedSizeOf);
     }
 
     @Override

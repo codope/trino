@@ -44,7 +44,7 @@ public class HudiConfig
     private int minPartitionBatchSize = 10;
     private int maxPartitionBatchSize = 100;
     private boolean sizeBasedSplitWeightsEnabled = true;
-    private DataSize standardSplitWeightSize = DataSize.of(128, MEGABYTE);
+    private DataSize standardSplitWeightSize = DataSize.of(64, MEGABYTE);
     private double minimumAssignedSplitWeight = 0.05;
     private int maxSplitsPerSecond = Integer.MAX_VALUE;
     private int maxOutstandingSplits = 1000;
