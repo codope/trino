@@ -22,11 +22,14 @@ import static io.trino.plugin.hudi.files.FSUtils.isLogFile;
 import static java.util.Objects.requireNonNull;
 
 public class HudiBaseFile
+        implements HudiFile
 {
     private transient FileEntry fileEntry;
     private final String fullPath;
     private final String fileName;
     private long fileLen;
+    private long offset;
+    private long fileModifiedTime;
 
     public HudiBaseFile(FileEntry fileEntry)
     {
@@ -42,14 +45,12 @@ public class HudiBaseFile
         this.fullPath = requireNonNull(fullPath, "fullPath is null");
         this.fileLen = fileLen;
         this.fileName = requireNonNull(fileName, "fileName is null");
+        this.offset = fileEntry.blocks().map(listOfBlocks -> (!listOfBlocks.isEmpty()) ? listOfBlocks.get(0).offset() : 0).orElse(0L);
+        this.fileModifiedTime = fileEntry.lastModified().toEpochMilli();
     }
 
-    public String getPath()
-    {
-        return fullPath;
-    }
-
-    public Location getFullPath()
+    @Override
+    public Location getLocation()
     {
         if (fileEntry != null) {
             return fileEntry.location();
@@ -66,6 +67,24 @@ public class HudiBaseFile
     public FileEntry getFileEntry()
     {
         return fileEntry;
+    }
+
+    @Override
+    public long getFileSize()
+    {
+        return fileLen;
+    }
+
+    @Override
+    public long getOffset()
+    {
+        return offset;
+    }
+
+    @Override
+    public long getFileModifiedTime()
+    {
+        return fileModifiedTime;
     }
 
     public String getFileId()
