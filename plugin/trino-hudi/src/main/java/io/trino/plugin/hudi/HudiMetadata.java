@@ -19,9 +19,14 @@ import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HdfsEnvironment.HdfsContext;
 import io.trino.plugin.hive.HiveColumnHandle;
+import io.trino.plugin.hive.HivePartition;
+import io.trino.plugin.hive.HivePartitionManager;
+import io.trino.plugin.hive.HivePartitionResult;
+import io.trino.plugin.hive.HiveTableHandle;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
+import io.trino.plugin.hive.statistics.HiveStatisticsProvider;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ColumnMetadata;
@@ -36,6 +41,8 @@ import io.trino.spi.connector.SchemaTablePrefix;
 import io.trino.spi.connector.TableColumnsMetadata;
 import io.trino.spi.connector.TableNotFoundException;
 import io.trino.spi.predicate.TupleDomain;
+import io.trino.spi.statistics.TableStatistics;
+import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeManager;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -52,6 +59,7 @@ import java.util.function.Function;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.trino.plugin.hive.HiveMetadata.TABLE_COMMENT;
+import static io.trino.plugin.hive.HiveSessionProperties.isStatisticsEnabled;
 import static io.trino.plugin.hive.HiveTableProperties.PARTITIONED_BY_PROPERTY;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
 import static io.trino.plugin.hive.util.HiveUtil.columnMetadataGetter;
@@ -74,12 +82,16 @@ public class HudiMetadata
     private final HiveMetastore metastore;
     private final HdfsEnvironment hdfsEnvironment;
     private final TypeManager typeManager;
+    private final HudiPartitionManager partitionManager;
+    private final HiveStatisticsProvider hiveStatisticsProvider;
 
-    public HudiMetadata(HiveMetastore metastore, HdfsEnvironment hdfsEnvironment, TypeManager typeManager)
+    public HudiMetadata(HiveMetastore metastore, HdfsEnvironment hdfsEnvironment, TypeManager typeManager, HudiPartitionManager partitionManager, HiveStatisticsProvider hiveStatisticsProvider)
     {
         this.metastore = requireNonNull(metastore, "metastore is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
+        this.partitionManager = requireNonNull(partitionManager, "partitionManager is null");
+        this.hiveStatisticsProvider = requireNonNull(hiveStatisticsProvider, "hiveStatisticsProvider is null");
     }
 
     @Override
@@ -145,6 +157,29 @@ public class HudiMetadata
                 .orElseThrow(() -> new TableNotFoundException(schemaTableName(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())));
         return hiveColumnHandles(table, typeManager, NANOSECONDS).stream()
                 .collect(toImmutableMap(HiveColumnHandle::getName, identity()));
+    }
+
+    @Override
+    public TableStatistics getTableStatistics(ConnectorSession session, ConnectorTableHandle tableHandle)
+    {
+        if (!isStatisticsEnabled(session)) {
+            return TableStatistics.empty();
+        }
+        Map<String, ColumnHandle> columns = getColumnHandles(session, tableHandle)
+            .entrySet().stream()
+            .filter(entry -> !((HiveColumnHandle) entry.getValue()).isHidden())
+            .collect(toImmutableMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, Type> columnTypes = columns.entrySet().stream()
+            .collect(toImmutableMap(Map.Entry::getKey, entry -> getColumnMetadata(session, tableHandle, entry.getValue()).getType()));
+        HivePartitionResult partitionResult = partitionManager.getPartitions(metastore, tableHandle, Constraint.alwaysTrue());
+        // If partitions are not loaded, then don't generate table statistics.
+        // Note that the computation is not persisted in the table handle, so can be redone many times
+        // TODO: https://github.com/trinodb/trino/issues/10980.
+        if (partitionManager.canPartitionsBeLoaded(partitionResult)) {
+            List<HivePartition> partitions = partitionManager.getPartitionsAsList(partitionResult);
+            return hiveStatisticsProvider.getTableStatistics(session, ((HiveTableHandle) tableHandle).getSchemaTableName(), columns, columnTypes, partitions);
+        }
+        return TableStatistics.empty();
     }
 
     @Override
