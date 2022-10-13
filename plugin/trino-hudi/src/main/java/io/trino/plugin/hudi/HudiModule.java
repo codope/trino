@@ -53,6 +53,7 @@ public class HudiModule
         binder.bind(HudiTransactionManager.class).in(Scopes.SINGLETON);
 
         configBinder(binder).bindConfig(HudiConfig.class);
+        configBinder(binder).bindConfig(HiveConfig.class);
         configBinder(binder).bindConfig(HiveMetastoreConfig.class);
         binder.bind(Key.get(boolean.class, TranslateHiveViews.class)).toInstance(false);
 
@@ -66,6 +67,7 @@ public class HudiModule
         configBinder(binder).bindConfig(ParquetReaderConfig.class);
         configBinder(binder).bindConfig(ParquetWriterConfig.class);
 
+        binder.bind(HudiPartitionManager.class).in(Scopes.SINGLETON);
         binder.bind(HudiMetadataFactory.class).in(Scopes.SINGLETON);
 
         binder.bind(FileFormatDataSourceStats.class).in(Scopes.SINGLETON);

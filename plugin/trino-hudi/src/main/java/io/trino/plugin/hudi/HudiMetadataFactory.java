@@ -33,22 +33,23 @@ public class HudiMetadataFactory
     private final HdfsEnvironment hdfsEnvironment;
     private final TypeManager typeManager;
     private final HudiPartitionManager partitionManager;
-    private final HiveStatisticsProvider hiveStatisticsProvider;
 
     @Inject
-    public HudiMetadataFactory(HiveMetastoreFactory metastoreFactory, HdfsEnvironment hdfsEnvironment, TypeManager typeManager, HudiPartitionManager partitionManager,
-                               HiveStatisticsProvider hiveStatisticsProvider)
+    public HudiMetadataFactory(
+            HiveMetastoreFactory metastoreFactory,
+            HdfsEnvironment hdfsEnvironment,
+            TypeManager typeManager,
+            HudiPartitionManager partitionManager)
     {
         this.metastoreFactory = requireNonNull(metastoreFactory, "metastore is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
         this.partitionManager = requireNonNull(partitionManager, "partitionManager is null");
-        this.hiveStatisticsProvider = requireNonNull(hiveStatisticsProvider, "hiveStatisticsProvider is null");
     }
 
     public HudiMetadata create(ConnectorIdentity identity)
     {
         HiveMetastore metastore = metastoreFactory.createMetastore(Optional.of(identity));
-        return new HudiMetadata(metastore, hdfsEnvironment, typeManager, partitionManager, hiveStatisticsProvider);
+        return new HudiMetadata(metastore, hdfsEnvironment, typeManager, partitionManager, new HudiHiveStatisticsProvider(metastore));
     }
 }
