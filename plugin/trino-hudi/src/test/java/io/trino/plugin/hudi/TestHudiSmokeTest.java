@@ -50,6 +50,13 @@ public class TestHudiSmokeTest
     }
 
     @Test
+    public void testTopN()
+    {
+        // remove this test or make it work with tpch tables
+        assertQueryOrdered("SELECT n.symbol, r.symbol FROM stock_ticks_cow n LEFT JOIN stock_ticks_cow_column_stats r ON n.key = r.key ORDER BY n.symbol LIMIT 1");
+    }
+
+    @Test
     public void testReadPartitionedTables()
     {
         assertQuery("SELECT symbol, max(ts) FROM " + STOCK_TICKS_COW + " GROUP BY symbol HAVING symbol = 'GOOG'",

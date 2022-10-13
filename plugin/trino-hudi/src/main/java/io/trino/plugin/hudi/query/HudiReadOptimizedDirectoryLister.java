@@ -16,15 +16,12 @@ package io.trino.plugin.hudi.query;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hive.metastore.HiveMetastore;
-import io.trino.plugin.hive.metastore.MetastoreUtil;
 import io.trino.plugin.hive.metastore.Partition;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.partition.HiveHudiPartitionInfo;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
 import io.trino.spi.connector.SchemaTableName;
-import io.trino.spi.connector.TableNotFoundException;
-import io.trino.spi.predicate.TupleDomain;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
@@ -32,7 +29,6 @@ import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,12 +44,9 @@ public class HudiReadOptimizedDirectoryLister
     private final HiveMetastore hiveMetastore;
     private final Table hiveTable;
     private final SchemaTableName tableName;
-    private final List<HiveColumnHandle> partitionColumnHandles;
     private final HoodieTableFileSystemView fileSystemView;
-    private final TupleDomain<String> partitionKeysFilter;
     private final List<Column> partitionColumns;
-
-    private List<String> hivePartitionNames;
+    private final List<HudiPartitionInfo> allPartitionInfoList;
 
     public HudiReadOptimizedDirectoryLister(
             HoodieMetadataConfig metadataConfig,
@@ -62,28 +55,16 @@ public class HudiReadOptimizedDirectoryLister
             HoodieTableMetaClient metaClient,
             HiveMetastore hiveMetastore,
             Table hiveTable,
-            List<HiveColumnHandle> partitionColumnHandles)
+            List<HiveColumnHandle> partitionColumnHandles,
+            List<String> hivePartitionNames)
     {
         this.tableHandle = tableHandle;
         this.tableName = tableHandle.getSchemaTableName();
         this.hiveMetastore = hiveMetastore;
         this.hiveTable = hiveTable;
-        this.partitionColumnHandles = partitionColumnHandles;
         this.fileSystemView = FileSystemViewManager.createInMemoryFileSystemView(engineContext, metaClient, metadataConfig);
-        this.partitionKeysFilter = MetastoreUtil.computePartitionKeyFilter(partitionColumnHandles, tableHandle.getPartitionPredicates());
         this.partitionColumns = hiveTable.getPartitionColumns();
-    }
-
-    @Override
-    public List<HudiPartitionInfo> getPartitionsToScan()
-    {
-        if (hivePartitionNames == null) {
-            hivePartitionNames = partitionColumns.isEmpty()
-                    ? Collections.singletonList("")
-                    : getPartitionNamesFromHiveMetastore(partitionKeysFilter);
-        }
-
-        List<HudiPartitionInfo> allPartitionInfoList = hivePartitionNames.stream()
+        this.allPartitionInfoList = hivePartitionNames.stream()
                 .map(hivePartitionName -> new HiveHudiPartitionInfo(
                         hivePartitionName,
                         partitionColumns,
@@ -92,7 +73,11 @@ public class HudiReadOptimizedDirectoryLister
                         hiveTable,
                         hiveMetastore))
                 .collect(Collectors.toList());
+    }
 
+    @Override
+    public List<HudiPartitionInfo> getPartitionsToScan()
+    {
         return allPartitionInfoList.stream()
                 .filter(partitionInfo -> partitionInfo.getHivePartitionKeys().isEmpty() || partitionInfo.doesMatchPredicates())
                 .collect(Collectors.toList());
@@ -106,19 +91,18 @@ public class HudiReadOptimizedDirectoryLister
                 .collect(toImmutableList());
     }
 
-    private List<String> getPartitionNamesFromHiveMetastore(TupleDomain<String> partitionKeysFilter)
-    {
-        return hiveMetastore.getPartitionNamesByFilter(
-                tableName.getSchemaName(),
-                tableName.getTableName(),
-                partitionColumns.stream().map(Column::getName).collect(Collectors.toList()),
-                partitionKeysFilter).orElseThrow(() -> new TableNotFoundException(tableHandle.getSchemaTableName()));
-    }
-
     @Override
     public Map<String, Optional<Partition>> getPartitions(List<String> partitionNames)
     {
         return hiveMetastore.getPartitionsByNames(hiveTable, partitionNames);
+    }
+
+    @Override
+    public Optional<HudiPartitionInfo> getPartitionInfo(String partition)
+    {
+        return allPartitionInfoList.stream()
+                .filter(partitionInfo -> partition.equals(partitionInfo.getHivePartitionName()))
+                .findFirst();
     }
 
     @Override
