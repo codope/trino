@@ -18,7 +18,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import io.airlift.slice.SizeOf;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.spi.HostAddress;
@@ -28,22 +27,23 @@ import io.trino.spi.predicate.TupleDomain;
 import org.openjdk.jol.info.ClassLayout;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.slice.SizeOf.estimatedSizeOf;
+import static java.lang.Math.toIntExact;
 import static java.util.Objects.requireNonNull;
 
 public class HudiSplit
         implements ConnectorSplit
 {
-    private static final int INSTANCE_SIZE = ClassLayout.parseClass(HudiSplit.class).instanceSize();
+    private static final int INSTANCE_SIZE = toIntExact(ClassLayout.parseClass(HudiSplit.class).instanceSize());
 
     private final String path;
     private final long start;
     private final long length;
     private final long fileSize;
+    private final long fileModifiedTime;
     private final List<HostAddress> addresses;
     private final TupleDomain<HiveColumnHandle> predicate;
     private final List<HivePartitionKey> partitionKeys;
@@ -55,6 +55,7 @@ public class HudiSplit
             @JsonProperty("start") long start,
             @JsonProperty("length") long length,
             @JsonProperty("fileSize") long fileSize,
+            @JsonProperty("fileModifiedTime") long fileModifiedTime,
             @JsonProperty("addresses") List<HostAddress> addresses,
             @JsonProperty("predicate") TupleDomain<HiveColumnHandle> predicate,
             @JsonProperty("partitionKeys") List<HivePartitionKey> partitionKeys,
@@ -68,6 +69,7 @@ public class HudiSplit
         this.start = start;
         this.length = length;
         this.fileSize = fileSize;
+        this.fileModifiedTime = fileModifiedTime;
         this.addresses = ImmutableList.copyOf(requireNonNull(addresses, "addresses is null"));
         this.predicate = requireNonNull(predicate, "predicate is null");
         this.partitionKeys = ImmutableList.copyOf(requireNonNull(partitionKeys, "partitionKeys is null"));
@@ -95,6 +97,7 @@ public class HudiSplit
                 .put("start", start)
                 .put("length", length)
                 .put("fileSize", fileSize)
+                .put("fileModifiedTime", fileModifiedTime)
                 .buildOrThrow();
     }
 
@@ -130,6 +133,12 @@ public class HudiSplit
     }
 
     @JsonProperty
+    public long getFileModifiedTime()
+    {
+        return fileModifiedTime;
+    }
+
+    @JsonProperty
     public TupleDomain<HiveColumnHandle> getPredicate()
     {
         return predicate;
@@ -148,10 +157,8 @@ public class HudiSplit
                 + estimatedSizeOf(path)
                 + estimatedSizeOf(addresses, HostAddress::getRetainedSizeInBytes)
                 + splitWeight.getRetainedSizeInBytes()
-                + estimatedSizeOf(
-                partitionKeys.stream().collect(Collectors.toMap(HivePartitionKey::getName, HivePartitionKey::getName)),
-                SizeOf::estimatedSizeOf,
-                SizeOf::estimatedSizeOf);
+                + predicate.getRetainedSizeInBytes(HiveColumnHandle::getRetainedSizeInBytes)
+                + estimatedSizeOf(partitionKeys, HivePartitionKey::getEstimatedSizeInBytes);
     }
 
     @Override
@@ -162,6 +169,7 @@ public class HudiSplit
                 .addValue(start)
                 .addValue(length)
                 .addValue(fileSize)
+                .addValue(fileModifiedTime)
                 .toString();
     }
 }

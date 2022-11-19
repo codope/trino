@@ -17,7 +17,7 @@ package io.trino.plugin.hudi;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.HiveMetastoreFactory;
-import io.trino.plugin.hive.statistics.HiveStatisticsProvider;
+import io.trino.plugin.hive.metastore.cache.CachingHiveMetastore;
 import io.trino.spi.security.ConnectorIdentity;
 import io.trino.spi.type.TypeManager;
 
@@ -25,6 +25,7 @@ import javax.inject.Inject;
 
 import java.util.Optional;
 
+import static io.trino.plugin.hive.metastore.cache.CachingHiveMetastore.memoizeMetastore;
 import static java.util.Objects.requireNonNull;
 
 public class HudiMetadataFactory
@@ -32,24 +33,25 @@ public class HudiMetadataFactory
     private final HiveMetastoreFactory metastoreFactory;
     private final HdfsEnvironment hdfsEnvironment;
     private final TypeManager typeManager;
-    private final HudiPartitionManager partitionManager;
 
     @Inject
     public HudiMetadataFactory(
             HiveMetastoreFactory metastoreFactory,
             HdfsEnvironment hdfsEnvironment,
-            TypeManager typeManager,
-            HudiPartitionManager partitionManager)
+            TypeManager typeManager)
     {
         this.metastoreFactory = requireNonNull(metastoreFactory, "metastore is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
-        this.partitionManager = requireNonNull(partitionManager, "partitionManager is null");
     }
 
     public HudiMetadata create(ConnectorIdentity identity)
     {
         HiveMetastore metastore = metastoreFactory.createMetastore(Optional.of(identity));
-        return new HudiMetadata(metastore, hdfsEnvironment, typeManager, partitionManager, new HudiHiveStatisticsProvider(metastore));
+        // create per-transaction cache over hive metastore interface
+        CachingHiveMetastore cachingHiveMetastore = memoizeMetastore(
+                metastoreFactory.createMetastore(Optional.of(identity)),
+                2000);
+        return new HudiMetadata(cachingHiveMetastore, hdfsEnvironment, typeManager);
     }
 }

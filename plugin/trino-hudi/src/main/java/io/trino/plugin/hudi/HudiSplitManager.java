@@ -14,14 +14,13 @@
 
 package io.trino.plugin.hudi;
 
+import io.airlift.log.Logger;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.hive.HdfsEnvironment;
 import io.trino.plugin.hive.HdfsEnvironment.HdfsContext;
 import io.trino.plugin.hive.HiveColumnHandle;
-import io.trino.plugin.hive.HiveTransactionHandle;
 import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
-import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorSplitSource;
@@ -30,20 +29,20 @@ import io.trino.spi.connector.ConnectorTransactionHandle;
 import io.trino.spi.connector.Constraint;
 import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.connector.TableNotFoundException;
-import io.trino.spi.security.ConnectorIdentity;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hudi.common.util.HoodieTimer;
 
 import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 
-import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.function.BiFunction;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
+import static io.trino.plugin.hudi.HudiSessionProperties.getMaxOutstandingSplits;
+import static io.trino.plugin.hudi.HudiSessionProperties.getMaxSplitsPerSecond;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Function.identity;
@@ -51,26 +50,30 @@ import static java.util.function.Function.identity;
 public class HudiSplitManager
         implements ConnectorSplitManager
 {
+    private static final Logger log = Logger.get(HudiSplitManager.class);
+
     private final HudiTransactionManager transactionManager;
-    private final BiFunction<ConnectorIdentity, HiveTransactionHandle, HiveMetastore> metastoreProvider;
+    private final HudiPartitionManager partitionManager;
     private final HdfsEnvironment hdfsEnvironment;
     private final ExecutorService executor;
-    private final int maxSplitsPerSecond;
-    private final int maxOutstandingSplits;
+    private final ScheduledExecutorService splitLoaderExecutorService;
+    private final ExecutorService splitGeneratorExecutorService;
 
     @Inject
     public HudiSplitManager(
             HudiTransactionManager transactionManager,
-            BiFunction<ConnectorIdentity, HiveTransactionHandle, HiveMetastore> metastoreProvider, HdfsEnvironment hdfsEnvironment,
+            HudiPartitionManager partitionManager,
+            HdfsEnvironment hdfsEnvironment,
             @ForHudiSplitManager ExecutorService executor,
-            HudiConfig hudiConfig)
+            @ForHudiSplitSource ScheduledExecutorService splitLoaderExecutorService,
+            @ForHudiBackgroundSplitLoader ExecutorService splitGeneratorExecutorService)
     {
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
-        this.metastoreProvider = requireNonNull(metastoreProvider, "metastoreProvider is null");
+        this.partitionManager = requireNonNull(partitionManager, "partitionManager is null");
         this.hdfsEnvironment = requireNonNull(hdfsEnvironment, "hdfsEnvironment is null");
         this.executor = requireNonNull(executor, "executor is null");
-        this.maxSplitsPerSecond = requireNonNull(hudiConfig, "hudiConfig is null").getMaxSplitsPerSecond();
-        this.maxOutstandingSplits = hudiConfig.getMaxOutstandingSplits();
+        this.splitLoaderExecutorService = requireNonNull(splitLoaderExecutorService, "splitLoaderExecutorService is null");
+        this.splitGeneratorExecutorService = requireNonNull(splitGeneratorExecutorService, "splitGeneratorExecutorService is null");
     }
 
     @PreDestroy
@@ -93,26 +96,27 @@ public class HudiSplitManager
                 .values().stream().map(HiveColumnHandle.class::cast)
                 .filter(HiveColumnHandle::isPartitionKey)
                 .collect(toImmutableMap(HiveColumnHandle::getName, identity()));
-        HiveMetastore metastore = metastoreProvider.apply(session.getIdentity(), (HiveTransactionHandle) transaction);
+        HiveMetastore metastore = hudiMetadata.getMetastore();
         Table table = metastore.getTable(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())
                 .orElseThrow(() -> new TableNotFoundException(schemaTableName(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())));
-        final FileSystem fs;
-        try {
-            fs = hdfsEnvironment.getFileSystem(new HdfsContext(session), new Path(table.getStorage().getLocation()));
-        }
-        catch (IOException e) {
-            throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Cannot get filesystem", e);
-        }
+
+        HoodieTimer timer = new HoodieTimer().startTimer();
+        List<String> partitions = partitionManager.getEffectivePartitions(hudiTableHandle, metastore);
+        log.info("Took %d ms to get %d partitions", timer.endTimer(), partitions.size());
+
         HudiSplitSource splitSource = new HudiSplitSource(
                 session,
                 metastore,
                 table,
                 hudiTableHandle,
-                fs,
+                hdfsEnvironment.getConfiguration(new HdfsContext(session), new Path(table.getStorage().getLocation())),
                 partitionColumnHandles,
                 executor,
-                maxSplitsPerSecond,
-                maxOutstandingSplits);
+                splitLoaderExecutorService,
+                splitGeneratorExecutorService,
+                getMaxSplitsPerSecond(session),
+                getMaxOutstandingSplits(session),
+                partitions);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, HudiSplitManager.class.getClassLoader());
     }
 }

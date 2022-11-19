@@ -14,8 +14,23 @@
 
 package io.trino.plugin.hudi.query;
 
-public enum HudiQueryMode {
-    SNAPSHOT,
-    INCREMENTAL,
-    READ_OPTIMIZED
+import io.trino.plugin.hive.metastore.Partition;
+import io.trino.plugin.hudi.partition.HudiPartitionInfo;
+import org.apache.hadoop.fs.FileStatus;
+
+import java.io.Closeable;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+public interface HudiDirectoryLister
+        extends Closeable
+{
+    List<HudiPartitionInfo> getPartitionsToScan();
+
+    List<FileStatus> listStatus(HudiPartitionInfo partitionInfo);
+
+    Map<String, Optional<Partition>> getPartitions(List<String> partitionNames);
+
+    Optional<HudiPartitionInfo> getPartitionInfo(String partition);
 }

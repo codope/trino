@@ -57,14 +57,14 @@ public class DeltaLakeConfig
     private double minimumAssignedSplitWeight = 0.05;
     private int maxPartitionsPerWriter = 100;
     private boolean unsafeWritesEnabled;
-    private boolean checkpointRowStatisticsWritingEnabled = true;
+    private boolean checkpointRowStatisticsWritingEnabled;
     private long defaultCheckpointWritingInterval = 10;
     private boolean ignoreCheckpointWriteFailures;
     private Duration vacuumMinRetention = new Duration(7, DAYS);
     private Optional<String> hiveCatalogName = Optional.empty();
     private Duration dynamicFilteringWaitTimeout = new Duration(0, SECONDS);
-    private boolean tableStatisticsEnabled = true;
-    private boolean extendedStatisticsEnabled = true;
+    private boolean tableStatisticsEnabled;
+    private boolean extendedStatisticsEnabled;
     private HiveCompressionCodec compressionCodec = HiveCompressionCodec.SNAPPY;
     private long perTransactionMetastoreCacheMaximumSize = 1000;
     private boolean deleteSchemaLocationsFallback;

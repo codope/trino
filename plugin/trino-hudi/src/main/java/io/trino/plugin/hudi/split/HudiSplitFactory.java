@@ -19,10 +19,7 @@ import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hudi.HudiSplit;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.spi.TrinoException;
-import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.LocatedFileStatus;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapred.FileSplit;
 import org.apache.hudi.hadoop.PathWithBootstrapFileStatus;
@@ -32,7 +29,6 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
-import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 public class HudiSplitFactory
@@ -41,16 +37,13 @@ public class HudiSplitFactory
 
     private final HudiTableHandle hudiTableHandle;
     private final HudiSplitWeightProvider hudiSplitWeightProvider;
-    private final FileSystem fileSystem;
 
     public HudiSplitFactory(
             HudiTableHandle hudiTableHandle,
-            HudiSplitWeightProvider hudiSplitWeightProvider,
-            FileSystem fileSystem)
+            HudiSplitWeightProvider hudiSplitWeightProvider)
     {
         this.hudiTableHandle = requireNonNull(hudiTableHandle, "hudiTableHandle is null");
         this.hudiSplitWeightProvider = requireNonNull(hudiSplitWeightProvider, "hudiSplitWeightProvider is null");
-        this.fileSystem = requireNonNull(fileSystem, "fileSystem is null");
     }
 
     public Stream<HudiSplit> createSplits(List<HivePartitionKey> partitionKeys, FileStatus fileStatus)
@@ -69,6 +62,7 @@ public class HudiSplitFactory
                         fileSplit.getStart(),
                         fileSplit.getLength(),
                         fileStatus.getLen(),
+                        fileStatus.getModificationTime(),
                         ImmutableList.of(),
                         hudiTableHandle.getRegularPredicates(),
                         partitionKeys,
@@ -89,17 +83,8 @@ public class HudiSplitFactory
             return ImmutableList.of(new FileSplit(path, 0, 0, new String[0]));
         }
 
-        BlockLocation[] blockLocations;
-        if (fileStatus instanceof LocatedFileStatus) {
-            blockLocations = ((LocatedFileStatus) fileStatus).getBlockLocations();
-        }
-        else {
-            blockLocations = fileSystem.getFileBlockLocations(fileStatus, 0, length);
-        }
-
         if (!isSplitable(path)) {
-            SplitHosts splitHosts = SplitHosts.at(blockLocations, 0);
-            return ImmutableList.of(new FileSplit(path, 0, length, splitHosts.getHosts(), splitHosts.getCachedHosts()));
+            return ImmutableList.of(new FileSplit(path, 0, length, (String[]) null));
         }
 
         ImmutableList.Builder<FileSplit> splits = ImmutableList.builder();
@@ -107,13 +92,11 @@ public class HudiSplitFactory
 
         long bytesRemaining = length;
         while (((double) bytesRemaining) / splitSize > SPLIT_SLOP) {
-            SplitHosts splitHosts = SplitHosts.at(blockLocations, length - bytesRemaining);
-            splits.add(new FileSplit(path, length - bytesRemaining, splitSize, splitHosts.getHosts(), splitHosts.getCachedHosts()));
+            splits.add(new FileSplit(path, length - bytesRemaining, splitSize, (String[]) null));
             bytesRemaining -= splitSize;
         }
         if (bytesRemaining != 0) {
-            SplitHosts splitHosts = SplitHosts.at(blockLocations, length - bytesRemaining);
-            splits.add(new FileSplit(path, length - bytesRemaining, bytesRemaining, splitHosts.getHosts(), splitHosts.getCachedHosts()));
+            splits.add(new FileSplit(path, length - bytesRemaining, bytesRemaining, (String[]) null));
         }
         return splits.build();
     }
@@ -121,52 +104,5 @@ public class HudiSplitFactory
     private static boolean isSplitable(Path filename)
     {
         return !(filename instanceof PathWithBootstrapFileStatus);
-    }
-
-    private static int getBlockIndex(BlockLocation[] blkLocations, long offset)
-    {
-        for (int i = 0; i < blkLocations.length; i++) {
-            if (isOffsetInBlock(blkLocations[i], offset)) {
-                return i;
-            }
-        }
-        BlockLocation last = blkLocations[blkLocations.length - 1];
-        long fileLength = last.getOffset() + last.getLength() - 1;
-        throw new IllegalArgumentException(format("Offset %d is outside of file (0..%d)", offset, fileLength));
-    }
-
-    private static boolean isOffsetInBlock(BlockLocation blkLocation, long offset)
-    {
-        return (blkLocation.getOffset() <= offset) &&
-                (offset < blkLocation.getOffset() + blkLocation.getLength());
-    }
-
-    private static class SplitHosts
-    {
-        private final String[] hosts;
-        private final String[] cachedHosts;
-
-        private static SplitHosts at(BlockLocation[] blkLocations, long offset)
-                throws IOException
-        {
-            int index = getBlockIndex(blkLocations, offset);
-            return new SplitHosts(blkLocations[index].getHosts(), blkLocations[index].getCachedHosts());
-        }
-
-        private SplitHosts(String[] hosts, String[] cachedHosts)
-        {
-            this.hosts = hosts;
-            this.cachedHosts = cachedHosts;
-        }
-
-        public String[] getHosts()
-        {
-            return hosts;
-        }
-
-        public String[] getCachedHosts()
-        {
-            return cachedHosts;
-        }
     }
 }

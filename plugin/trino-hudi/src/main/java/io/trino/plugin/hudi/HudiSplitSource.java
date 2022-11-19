@@ -21,8 +21,8 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.AsyncQueue;
 import io.trino.plugin.hive.util.ThrottledAsyncQueue;
-import io.trino.plugin.hudi.query.HudiFileLister;
-import io.trino.plugin.hudi.query.HudiQueryMode;
+import io.trino.plugin.hudi.query.HudiDirectoryLister;
+import io.trino.plugin.hudi.query.HudiReadOptimizedDirectoryLister;
 import io.trino.plugin.hudi.split.HudiBackgroundSplitLoader;
 import io.trino.plugin.hudi.split.HudiSplitWeightProvider;
 import io.trino.plugin.hudi.split.SizeBasedSplitWeightProvider;
@@ -31,7 +31,6 @@ import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.engine.HoodieLocalEngineContext;
@@ -41,6 +40,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
@@ -49,8 +51,6 @@ import static io.trino.plugin.hudi.HudiSessionProperties.getMinimumAssignedSplit
 import static io.trino.plugin.hudi.HudiSessionProperties.getStandardSplitWeightSize;
 import static io.trino.plugin.hudi.HudiSessionProperties.isHudiMetadataEnabled;
 import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeightsEnabled;
-import static io.trino.plugin.hudi.HudiSessionProperties.shouldUseMetastoreForPartitions;
-import static io.trino.plugin.hudi.query.HudiFileListerFactory.create;
 import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static java.util.stream.Collectors.toList;
 
@@ -58,6 +58,7 @@ public class HudiSplitSource
         implements ConnectorSplitSource
 {
     private final AsyncQueue<ConnectorSplit> queue;
+    private final ScheduledFuture splitLoaderFuture;
     private final AtomicReference<TrinoException> trinoException = new AtomicReference<>();
 
     public HudiSplitSource(
@@ -65,25 +66,25 @@ public class HudiSplitSource
             HiveMetastore metastore,
             Table table,
             HudiTableHandle tableHandle,
-            FileSystem fs,
+            Configuration configuration,
             Map<String, HiveColumnHandle> partitionColumnHandleMap,
             ExecutorService executor,
+            ScheduledExecutorService splitLoaderExecutorService,
+            ExecutorService splitGeneratorExecutorService,
             int maxSplitsPerSecond,
-            int maxOutstandingSplits)
+            int maxOutstandingSplits,
+            List<String> partitions)
     {
         boolean metadataEnabled = isHudiMetadataEnabled(session);
-        boolean useMetastoreForPartitions = shouldUseMetastoreForPartitions(session);
-        HoodieTableMetaClient metaClient = buildTableMetaClient(fs.getConf(), tableHandle.getBasePath());
-        HoodieEngineContext engineContext = new HoodieLocalEngineContext(fs.getConf());
+        HoodieTableMetaClient metaClient = buildTableMetaClient(configuration, tableHandle.getBasePath());
+        HoodieEngineContext engineContext = new HoodieLocalEngineContext(configuration);
         HoodieMetadataConfig metadataConfig = HoodieMetadataConfig.newBuilder()
                 .enable(metadataEnabled)
                 .build();
         List<HiveColumnHandle> partitionColumnHandles = table.getPartitionColumns().stream()
                 .map(column -> partitionColumnHandleMap.get(column.getName())).collect(toList());
 
-        // TODO: fetch the query mode from config / query context
-        HudiFileLister hudiFileLister = create(
-                HudiQueryMode.READ_OPTIMIZED,
+        HudiDirectoryLister hudiDirectoryLister = new HudiReadOptimizedDirectoryLister(
                 metadataConfig,
                 engineContext,
                 tableHandle,
@@ -91,23 +92,24 @@ public class HudiSplitSource
                 metastore,
                 table,
                 partitionColumnHandles,
-                useMetastoreForPartitions);
+                partitions);
 
         this.queue = new ThrottledAsyncQueue<>(maxSplitsPerSecond, maxOutstandingSplits, executor);
         HudiBackgroundSplitLoader splitLoader = new HudiBackgroundSplitLoader(
                 session,
-                fs,
                 tableHandle,
-                hudiFileLister,
+                hudiDirectoryLister,
                 queue,
-                executor,
+                splitGeneratorExecutorService,
                 createSplitWeightProvider(session),
                 throwable -> {
                     trinoException.compareAndSet(null, new TrinoException(GENERIC_INTERNAL_ERROR,
-                            "Failed to generate splits for " + table.getTableName(), throwable));
+                            "Failed to generate splits for " + table.getTableName()));
                     queue.finish();
-                });
-        splitLoader.start();
+                },
+                partitions);
+        // splitLoader.start();
+        this.splitLoaderFuture = splitLoaderExecutorService.schedule(splitLoader, 0, TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -134,7 +136,7 @@ public class HudiSplitSource
     @Override
     public boolean isFinished()
     {
-        return queue.isFinished();
+        return splitLoaderFuture.isDone() && queue.isFinished();
     }
 
     private static HoodieTableMetaClient buildTableMetaClient(Configuration configuration, String basePath)

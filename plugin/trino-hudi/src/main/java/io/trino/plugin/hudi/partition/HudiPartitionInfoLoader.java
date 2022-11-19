@@ -14,117 +14,74 @@
 
 package io.trino.plugin.hudi.partition;
 
+import io.airlift.concurrent.MoreFutures;
 import io.airlift.log.Logger;
-import io.trino.plugin.hive.metastore.Partition;
-import io.trino.plugin.hudi.query.HudiFileLister;
-import io.trino.spi.connector.ConnectorSession;
+import io.trino.plugin.hive.HivePartitionKey;
+import io.trino.plugin.hive.util.AsyncQueue;
+import io.trino.plugin.hudi.query.HudiDirectoryLister;
+import io.trino.plugin.hudi.split.HudiSplitFactory;
+import io.trino.spi.connector.ConnectorSplit;
+import org.apache.hadoop.fs.FileStatus;
 import org.apache.hudi.common.util.HoodieTimer;
-import org.apache.hudi.exception.HoodieIOException;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Deque;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
-
-import static io.trino.plugin.hudi.HudiSessionProperties.getMaxPartitionBatchSize;
-import static io.trino.plugin.hudi.HudiSessionProperties.getMinPartitionBatchSize;
 
 public class HudiPartitionInfoLoader
         implements Runnable
 {
     private static final Logger log = Logger.get(HudiPartitionInfoLoader.class);
-    private final HudiFileLister hudiFileLister;
-    private final int minPartitionBatchSize;
-    private final int maxPartitionBatchSize;
-    private final Deque<HudiPartitionInfo> partitionQueue;
-    private int currBatchSize;
+
+    private final HudiDirectoryLister hudiDirectoryLister;
+    private final HudiSplitFactory hudiSplitFactory;
+    private final AsyncQueue<ConnectorSplit> asyncQueue;
+    private final Deque<String> partitionQueue;
+    private boolean isRunning;
 
     public HudiPartitionInfoLoader(
-            ConnectorSession session,
-            HudiFileLister hudiFileLister,
-            Deque<HudiPartitionInfo> partitionQueue)
+            HudiDirectoryLister hudiDirectoryLister,
+            HudiSplitFactory hudiSplitFactory,
+            AsyncQueue<ConnectorSplit> asyncQueue,
+            Deque<String> partitionQueue)
     {
-        this.hudiFileLister = hudiFileLister;
+        this.hudiDirectoryLister = hudiDirectoryLister;
+        this.hudiSplitFactory = hudiSplitFactory;
+        this.asyncQueue = asyncQueue;
         this.partitionQueue = partitionQueue;
-        this.minPartitionBatchSize = getMinPartitionBatchSize(session);
-        this.maxPartitionBatchSize = getMaxPartitionBatchSize(session);
-        this.currBatchSize = -1;
+        this.isRunning = true;
     }
 
     @Override
     public void run()
     {
         HoodieTimer timer = new HoodieTimer().startTimer();
-        List<HudiPartitionInfo> hudiPartitionInfoList = hudiFileLister.getPartitionsToScan().stream()
-                .sorted(Comparator.comparing(HudiPartitionInfo::getComparingKey)).collect(Collectors.toList());
 
-        // empty partitioned table
-        if (hudiPartitionInfoList.isEmpty()) {
-            return;
-        }
+        while (isRunning || !partitionQueue.isEmpty()) {
+            String partitionName = partitionQueue.poll();
 
-        // non-partitioned table
-        if (hudiPartitionInfoList.size() == 1 && hudiPartitionInfoList.get(0).getHivePartitionName().isEmpty()) {
-            synchronized (partitionQueue) {
-                partitionQueue.addAll(hudiPartitionInfoList);
-            }
-            return;
-        }
-
-        boolean shouldUseHiveMetastore = hudiPartitionInfoList.get(0) instanceof HiveHudiPartitionInfo;
-        Iterator<HudiPartitionInfo> iterator = hudiPartitionInfoList.iterator();
-        while (iterator.hasNext()) {
-            int batchSize = updateBatchSize();
-            List<HudiPartitionInfo> partitionInfoBatch = new ArrayList<>();
-            while (iterator.hasNext() && batchSize > 0) {
-                partitionInfoBatch.add(iterator.next());
-                batchSize--;
-            }
-
-            if (!partitionInfoBatch.isEmpty()) {
-                if (shouldUseHiveMetastore) {
-                    Map<String, Optional<Partition>> partitions =
-                            hudiFileLister.getPartitions(partitionInfoBatch.stream()
-                                    .map(HudiPartitionInfo::getHivePartitionName)
-                                    .collect(Collectors.toList()));
-                    partitionInfoBatch
-                            .forEach(partitionInfo -> {
-                                String hivePartitionName = partitionInfo.getHivePartitionName();
-                                if (!partitions.containsKey(hivePartitionName)) {
-                                    throw new HoodieIOException("Partition does not exist: " + hivePartitionName);
-                                }
-                                partitionInfo.loadPartitionInfo(partitions.get(hivePartitionName));
-                                synchronized (partitionQueue) {
-                                    partitionQueue.add(partitionInfo);
-                                }
-                            });
-                }
-                else {
-                    partitionInfoBatch.forEach(partitionInfo -> {
-                        partitionInfo.getHivePartitionKeys();
-                        synchronized (partitionQueue) {
-                            partitionQueue.add(partitionInfo);
-                        }
-                    });
-                }
+            if (partitionName != null) {
+                generateSplitsFromPartition(partitionName);
             }
         }
-        log.debug("HudiPartitionInfoLoader finishes in %d ms", timer.endTimer());
+        log.debug("HudiPartitionInfoLoader %s finishes in %d ms", this, timer.endTimer());
     }
 
-    private int updateBatchSize()
+    private void generateSplitsFromPartition(String partitionName)
     {
-        if (currBatchSize <= 0) {
-            currBatchSize = minPartitionBatchSize;
+        Optional<HudiPartitionInfo> partitionInfo = hudiDirectoryLister.getPartitionInfo(partitionName);
+        if (partitionInfo.isPresent()) {
+            List<HivePartitionKey> partitionKeys = partitionInfo.get().getHivePartitionKeys();
+            List<FileStatus> partitionFiles = hudiDirectoryLister.listStatus(partitionInfo.get());
+            partitionFiles.stream()
+                    .flatMap(fileStatus -> hudiSplitFactory.createSplits(partitionKeys, fileStatus))
+                    .map(asyncQueue::offer)
+                    .forEachOrdered(MoreFutures::getFutureValue);
         }
-        else {
-            currBatchSize *= 2;
-            currBatchSize = Math.min(currBatchSize, maxPartitionBatchSize);
-        }
-        return currBatchSize;
+    }
+
+    public void stopRunning()
+    {
+        this.isRunning = false;
     }
 }

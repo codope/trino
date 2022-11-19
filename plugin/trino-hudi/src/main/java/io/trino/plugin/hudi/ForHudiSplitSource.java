@@ -12,23 +12,21 @@
  * limitations under the License.
  */
 
-package io.trino.plugin.hudi.query;
+package io.trino.plugin.hudi;
 
-import io.trino.plugin.hive.metastore.Partition;
-import io.trino.plugin.hudi.partition.HudiPartitionInfo;
-import org.apache.hadoop.fs.FileStatus;
+import javax.inject.Qualifier;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.lang.annotation.Retention;
+import java.lang.annotation.Target;
 
-public interface HudiFileLister
+import static java.lang.annotation.ElementType.FIELD;
+import static java.lang.annotation.ElementType.METHOD;
+import static java.lang.annotation.ElementType.PARAMETER;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
+@Retention(RUNTIME)
+@Target({FIELD, PARAMETER, METHOD})
+@Qualifier
+public @interface ForHudiSplitSource
 {
-    List<HudiPartitionInfo> getPartitionsToScan();
-
-    List<FileStatus> listStatus(HudiPartitionInfo partitionInfo);
-
-    void close();
-
-    Map<String, Optional<Partition>> getPartitions(List<String> partitionNames);
 }
