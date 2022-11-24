@@ -104,6 +104,7 @@ public class HudiSplitManager
         List<String> partitions = partitionManager.getEffectivePartitions(hudiTableHandle, metastore);
         log.info("Took %d ms to get %d partitions", timer.endTimer(), partitions.size());
 
+        log.info("New implementation with race handled");
         HudiSplitSource splitSource = new HudiSplitSource(
                 session,
                 metastore,

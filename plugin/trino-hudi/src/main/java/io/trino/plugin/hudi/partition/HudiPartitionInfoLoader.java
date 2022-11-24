@@ -14,7 +14,6 @@
 
 package io.trino.plugin.hudi.partition;
 
-import io.airlift.concurrent.MoreFutures;
 import io.airlift.log.Logger;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.util.AsyncQueue;
@@ -24,9 +23,9 @@ import io.trino.spi.connector.ConnectorSplit;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hudi.common.util.HoodieTimer;
 
-import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+import java.util.Queue;
 
 public class HudiPartitionInfoLoader
         implements Runnable
@@ -36,14 +35,14 @@ public class HudiPartitionInfoLoader
     private final HudiDirectoryLister hudiDirectoryLister;
     private final HudiSplitFactory hudiSplitFactory;
     private final AsyncQueue<ConnectorSplit> asyncQueue;
-    private final Deque<String> partitionQueue;
+    private final Queue<String> partitionQueue;
     private boolean isRunning;
 
     public HudiPartitionInfoLoader(
             HudiDirectoryLister hudiDirectoryLister,
             HudiSplitFactory hudiSplitFactory,
             AsyncQueue<ConnectorSplit> asyncQueue,
-            Deque<String> partitionQueue)
+            Queue<String> partitionQueue)
     {
         this.hudiDirectoryLister = hudiDirectoryLister;
         this.hudiSplitFactory = hudiSplitFactory;
@@ -71,12 +70,12 @@ public class HudiPartitionInfoLoader
     {
         Optional<HudiPartitionInfo> partitionInfo = hudiDirectoryLister.getPartitionInfo(partitionName);
         if (partitionInfo.isPresent()) {
+            // log.info("Queueing splits for partition: %s", partitionInfo.get());
             List<HivePartitionKey> partitionKeys = partitionInfo.get().getHivePartitionKeys();
             List<FileStatus> partitionFiles = hudiDirectoryLister.listStatus(partitionInfo.get());
             partitionFiles.stream()
                     .flatMap(fileStatus -> hudiSplitFactory.createSplits(partitionKeys, fileStatus))
-                    .map(asyncQueue::offer)
-                    .forEachOrdered(MoreFutures::getFutureValue);
+                    .forEach(asyncQueue::offer);
         }
     }
 

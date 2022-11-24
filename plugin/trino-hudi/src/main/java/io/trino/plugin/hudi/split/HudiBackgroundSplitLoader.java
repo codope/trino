@@ -25,9 +25,9 @@ import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.exception.HoodieException;
 
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -70,7 +70,7 @@ public class HudiBackgroundSplitLoader
     public void run()
     {
         HoodieTimer timer = new HoodieTimer().startTimer();
-        Deque<String> partitionQueue = new ConcurrentLinkedDeque<>(partitions);
+        Queue<String> partitionQueue = new ConcurrentLinkedQueue<>(partitions);
         List<HudiPartitionInfoLoader> splitGeneratorList = new ArrayList<>();
         List<Future> splitGeneratorFutures = new ArrayList<>();
 
