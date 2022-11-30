@@ -55,4 +55,16 @@ public class TestHudiSmokeTest
         assertQuery("SELECT dt, count(1) FROM " + STOCK_TICKS_MOR + " GROUP BY dt",
                 "SELECT * FROM VALUES ('2018-08-31', '99')");
     }
+
+    @Test
+    public void readPartitionedTableJoin()
+    {
+        assertQuery(
+                "SELECT symbol, ts FROM " + STOCK_TICKS_COW + " WHERE dt = '2018-08-31' AND symbol = 'GOOG'",
+                "SELECT * FROM VALUES ('GOOG', '2018-08-31 10:59:00')");
+
+        /*assertQuery(
+                "SELECT symbol, ts FROM " + STOCK_TICKS_COW + " WHERE symbol NOT IN (SELECT t1.symbol FROM stock_ticks_cow t1 join stock_ticks_cow t2 on t1.key = t2.key AND t1.symbol = 'GOOG')",
+                "SELECT * FROM VALUES ('GOOG', '2018-08-31 10:59:00')");*/
+    }
 }

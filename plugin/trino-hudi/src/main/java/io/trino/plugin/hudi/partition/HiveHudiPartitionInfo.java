@@ -42,10 +42,9 @@ public class HiveHudiPartitionInfo
     private final List<HiveColumnHandle> partitionColumnHandles;
     private final TupleDomain<HiveColumnHandle> constraintSummary;
     private final String hivePartitionName;
-    private final List<Column> partitionColumns;
     private final HiveMetastore hiveMetastore;
     private String relativePartitionPath;
-    private List<HivePartitionKey> hivePartitionKeys;
+    private final List<HivePartitionKey> hivePartitionKeys;
 
     public HiveHudiPartitionInfo(
             String hivePartitionName,
@@ -59,10 +58,9 @@ public class HiveHudiPartitionInfo
         this.partitionColumnHandles = partitionColumnHandles;
         this.constraintSummary = constraintSummary;
         this.hivePartitionName = hivePartitionName;
-        this.partitionColumns = partitionColumns;
+        this.hivePartitionKeys = partitionColumns.isEmpty() ? Collections.emptyList() : buildPartitionKeys(partitionColumns, HiveUtil.toPartitionValues(hivePartitionName));
         if (partitionColumns.isEmpty()) {
             this.relativePartitionPath = "";
-            this.hivePartitionKeys = Collections.emptyList();
         }
         this.hiveMetastore = hiveMetastore;
     }
@@ -91,9 +89,6 @@ public class HiveHudiPartitionInfo
     @Override
     public List<HivePartitionKey> getHivePartitionKeys()
     {
-        if (isNull(hivePartitionKeys)) {
-            loadPartitionInfoFromHiveMetastore();
-        }
         return hivePartitionKeys;
     }
 
@@ -120,7 +115,6 @@ public class HiveHudiPartitionInfo
         this.relativePartitionPath = FSUtils.getRelativePartitionPath(
                 new Path(table.getStorage().getLocation()),
                 new Path(partition.get().getStorage().getLocation()));
-        this.hivePartitionKeys = buildPartitionKeys(partitionColumns, partition.get().getValues());
     }
 
     @Override

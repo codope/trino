@@ -43,9 +43,8 @@ public class HudiPartitionManager
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
     }
 
-    public List<String> getEffectivePartitions(HudiTableHandle tableHandle, HiveMetastore metastore)
+    public List<String> getEffectivePartitions(HudiTableHandle tableHandle, HiveMetastore metastore, Optional<Table> table)
     {
-        Optional<Table> table = metastore.getTable(tableHandle.getSchemaName(), tableHandle.getTableName());
         verify(table.isPresent());
         List<Column> partitionColumns = table.get().getPartitionColumns();
         if (partitionColumns.isEmpty()) {

@@ -56,7 +56,7 @@ public class HudiPartitionInfoLoader
     {
         HoodieTimer timer = new HoodieTimer().startTimer();
 
-        while (isRunning || !partitionQueue.isEmpty()) {
+        while (!partitionQueue.isEmpty()) {
             String partitionName = partitionQueue.poll();
 
             if (partitionName != null) {

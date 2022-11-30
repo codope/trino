@@ -2426,6 +2426,7 @@ public class DeltaLakeMetadata
             List<DeltaLakeColumnMetadata> schema,
             List<String> canonicalPartitionColumns)
     {
+        LOG.info(">>> I am still creating stats predicate despite stats turned off <<<");
         return addFileEntry.getStats()
                 .map(deltaLakeFileStatistics -> withColumnDomains(
                         schema.stream()

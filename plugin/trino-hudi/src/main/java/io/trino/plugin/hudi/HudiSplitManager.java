@@ -37,6 +37,7 @@ import javax.inject.Inject;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -101,7 +102,7 @@ public class HudiSplitManager
                 .orElseThrow(() -> new TableNotFoundException(schemaTableName(hudiTableHandle.getSchemaName(), hudiTableHandle.getTableName())));
 
         HoodieTimer timer = new HoodieTimer().startTimer();
-        List<String> partitions = partitionManager.getEffectivePartitions(hudiTableHandle, metastore);
+        List<String> partitions = partitionManager.getEffectivePartitions(hudiTableHandle, metastore, Optional.of(table));
         log.info("Took %d ms to get %d partitions", timer.endTimer(), partitions.size());
 
         log.info("New implementation with race handled");
@@ -117,7 +118,8 @@ public class HudiSplitManager
                 splitGeneratorExecutorService,
                 getMaxSplitsPerSecond(session),
                 getMaxOutstandingSplits(session),
-                partitions);
+                partitions,
+                dynamicFilter);
         return new ClassLoaderSafeConnectorSplitSource(splitSource, HudiSplitManager.class.getClassLoader());
     }
 }

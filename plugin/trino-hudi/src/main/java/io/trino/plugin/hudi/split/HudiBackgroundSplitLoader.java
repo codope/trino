@@ -21,6 +21,7 @@ import io.trino.plugin.hudi.partition.HudiPartitionInfoLoader;
 import io.trino.plugin.hudi.query.HudiDirectoryLister;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
+import io.trino.spi.connector.DynamicFilter;
 import org.apache.hudi.common.util.HoodieTimer;
 import org.apache.hudi.exception.HoodieException;
 
@@ -47,6 +48,7 @@ public class HudiBackgroundSplitLoader
     private final int splitGeneratorNumThreads;
     private final HudiSplitFactory hudiSplitFactory;
     private final List<String> partitions;
+    private final DynamicFilter dynamicFilter;
 
     public HudiBackgroundSplitLoader(
             ConnectorSession session,
@@ -56,7 +58,8 @@ public class HudiBackgroundSplitLoader
             ExecutorService splitGeneratorExecutorService,
             HudiSplitWeightProvider hudiSplitWeightProvider,
             Consumer<Throwable> errorListener,
-            List<String> partitions)
+            List<String> partitions,
+            DynamicFilter dynamicFilter)
     {
         this.hudiDirectoryLister = requireNonNull(hudiDirectoryLister, "hudiDirectoryLister is null");
         this.asyncQueue = requireNonNull(asyncQueue, "asyncQueue is null");
@@ -64,6 +67,7 @@ public class HudiBackgroundSplitLoader
         this.splitGeneratorNumThreads = getSplitGeneratorParallelism(session);
         this.hudiSplitFactory = new HudiSplitFactory(tableHandle, hudiSplitWeightProvider);
         this.partitions = requireNonNull(partitions, "partitions is null");
+        this.dynamicFilter = requireNonNull(dynamicFilter, "dynamicFilter is null");
     }
 
     @Override
@@ -81,10 +85,10 @@ public class HudiBackgroundSplitLoader
             splitGeneratorFutures.add(splitGeneratorExecutorService.submit(generator));
         }
 
-        for (HudiPartitionInfoLoader generator : splitGeneratorList) {
+        /*for (HudiPartitionInfoLoader generator : splitGeneratorList) {
             // Let the split generator stop once the partition queue is empty
             generator.stopRunning();
-        }
+        }*/
 
         // Wait for all split generators to finish
         for (Future future : splitGeneratorFutures) {

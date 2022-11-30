@@ -277,7 +277,7 @@ public class HudiConfig
     }
 
     @LegacyConfig("hive.per-transaction-metastore-cache-maximum-size")
-    @Config("delta.per-transaction-metastore-cache-maximum-size")
+    @Config("hudi.per-transaction-metastore-cache-maximum-size")
     public HudiConfig setPerTransactionMetastoreCacheMaximumSize(long perTransactionMetastoreCacheMaximumSize)
     {
         this.perTransactionMetastoreCacheMaximumSize = perTransactionMetastoreCacheMaximumSize;

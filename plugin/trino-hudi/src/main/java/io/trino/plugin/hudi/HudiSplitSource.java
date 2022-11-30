@@ -30,6 +30,7 @@ import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.connector.ConnectorSplitSource;
+import io.trino.spi.connector.DynamicFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
@@ -60,6 +61,7 @@ public class HudiSplitSource
     private final AsyncQueue<ConnectorSplit> queue;
     private final ScheduledFuture splitLoaderFuture;
     private final AtomicReference<TrinoException> trinoException = new AtomicReference<>();
+    private final DynamicFilter dynamicFilter;
 
     public HudiSplitSource(
             ConnectorSession session,
@@ -73,7 +75,8 @@ public class HudiSplitSource
             ExecutorService splitGeneratorExecutorService,
             int maxSplitsPerSecond,
             int maxOutstandingSplits,
-            List<String> partitions)
+            List<String> partitions,
+            DynamicFilter dynamicFilter)
     {
         boolean metadataEnabled = isHudiMetadataEnabled(session);
         HoodieTableMetaClient metaClient = buildTableMetaClient(configuration, tableHandle.getBasePath());
@@ -94,6 +97,7 @@ public class HudiSplitSource
                 partitionColumnHandles,
                 partitions);
 
+        this.dynamicFilter = dynamicFilter;
         this.queue = new ThrottledAsyncQueue<>(maxSplitsPerSecond, maxOutstandingSplits, executor);
         HudiBackgroundSplitLoader splitLoader = new HudiBackgroundSplitLoader(
                 session,
@@ -107,7 +111,8 @@ public class HudiSplitSource
                             "Failed to generate splits for " + table.getTableName()));
                     queue.finish();
                 },
-                partitions);
+                partitions,
+                dynamicFilter);
         // splitLoader.start();
         this.splitLoaderFuture = splitLoaderExecutorService.schedule(splitLoader, 0, TimeUnit.MILLISECONDS);
     }
