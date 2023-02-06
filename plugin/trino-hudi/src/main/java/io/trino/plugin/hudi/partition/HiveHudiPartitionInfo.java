@@ -69,7 +69,7 @@ public class HiveHudiPartitionInfo
     @Override
     public Table getTable()
     {
-        return null;
+        return table;
     }
 
     @Override

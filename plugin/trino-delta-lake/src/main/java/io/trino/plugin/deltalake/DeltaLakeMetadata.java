@@ -590,9 +590,11 @@ public class DeltaLakeMetadata
     @Override
     public TableStatistics getTableStatistics(ConnectorSession session, ConnectorTableHandle tableHandle)
     {
+        LOG.warn("inside getTableStatistics");
         if (!isTableStatisticsEnabled(session)) {
             return TableStatistics.empty();
         }
+        LOG.warn("fetching stats from metastore");
         return metastore.getTableStatistics(session, (DeltaLakeTableHandle) tableHandle);
     }
 
@@ -2425,6 +2427,7 @@ public class DeltaLakeMetadata
             List<DeltaLakeColumnMetadata> schema,
             List<String> canonicalPartitionColumns)
     {
+        LOG.warn("inside createStatisticsPredicate");
         return addFileEntry.getStats()
                 .map(deltaLakeFileStatistics -> withColumnDomains(
                         schema.stream()

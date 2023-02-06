@@ -155,6 +155,8 @@ public class ResourceHudiTablesInitializer
         HUDI_NON_PART_COW(COPY_ON_WRITE, nonPartitionRegularColumns()),
         HUDI_COW_PT_TBL(COPY_ON_WRITE, multiPartitionRegularColumns(), multiPartitionColumns(), multiPartitions()),
         STOCK_TICKS_COW(COPY_ON_WRITE, stockTicksRegularColumns(), stockTicksPartitionColumns(), stockTicksPartitions()),
+        // NOTE: remove this table, it is only for local testing purpose of column stats
+        STOCK_TICKS_COW_COLUMN_STATS(COPY_ON_WRITE, stockTicksRegularColumns(), stockTicksPartitionColumns(), stockTicksPartitions()),
         STOCK_TICKS_MOR(MERGE_ON_READ, stockTicksRegularColumns(), stockTicksPartitionColumns(), stockTicksPartitions()),
         /**/;
 

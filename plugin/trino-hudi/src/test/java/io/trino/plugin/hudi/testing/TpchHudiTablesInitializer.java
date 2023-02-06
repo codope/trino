@@ -31,9 +31,6 @@ import io.trino.tpch.TpchColumn;
 import io.trino.tpch.TpchColumnType;
 import io.trino.tpch.TpchColumnTypes;
 import io.trino.tpch.TpchTable;
-import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hudi.client.HoodieJavaWriteClient;
 import org.apache.hudi.client.common.HoodieJavaEngineContext;
@@ -50,6 +47,10 @@ import org.apache.hudi.config.HoodieArchivalConfig;
 import org.apache.hudi.config.HoodieIndexConfig;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.hudi.index.HoodieIndex;
+import org.apache.hudi.org.apache.avro.Schema;
+import org.apache.hudi.org.apache.avro.Schema.Field;
+import org.apache.hudi.org.apache.avro.generic.GenericData;
+import org.apache.hudi.org.apache.avro.generic.GenericRecord;
 import org.intellij.lang.annotations.Language;
 
 import java.io.IOException;
@@ -77,6 +78,7 @@ import static java.util.Collections.unmodifiableList;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toUnmodifiableList;
 import static org.apache.hadoop.hive.metastore.TableType.EXTERNAL_TABLE;
+import static org.apache.hudi.org.apache.avro.Schema.Type.STRING;
 
 public class TpchHudiTablesInitializer
         implements HudiTablesInitializer
@@ -263,14 +265,15 @@ public class TpchHudiTablesInitializer
     private static Schema createAvroSchema(TpchTable<?> table)
     {
         List<? extends TpchColumn<?>> tpchColumns = table.getColumns();
-        List<Schema.Field> fields = new ArrayList<>(tpchColumns.size() + 1);
+        List<Field> fields = new ArrayList<>(tpchColumns.size() + 1);
         for (TpchColumn<?> column : tpchColumns) {
             String columnName = column.getSimplifiedColumnName();
             Schema.Type columnSchemaType = toSchemaType(column.getType());
+            // NOTE: comment for now due to shading
             // Schema.createUnion(Schema.create(Schema.Type.NULL), Schema.create(type));
-            fields.add(new Schema.Field(columnName, Schema.create(columnSchemaType)));
+            //fields.add(new Field(columnName, create(columnSchemaType)));
         }
-        fields.add(new Schema.Field(FIELD_UUID, Schema.create(Schema.Type.STRING)));
+        //fields.add(new Field(FIELD_UUID, create(STRING)));
         String name = table.getTableName();
         return Schema.createRecord(name, null, null, false, fields);
     }
@@ -308,7 +311,7 @@ public class TpchHudiTablesInitializer
         IDENTIFIER(Schema.Type.LONG, hiveTypeOf(HIVE_LONG), Function.identity()),
         DATE(Schema.Type.INT, hiveTypeOf(HIVE_DATE), TpchColumnTypeAdapter::convertDate),
         DOUBLE(Schema.Type.DOUBLE, hiveTypeOf(HIVE_DOUBLE), Function.identity()),
-        VARCHAR(Schema.Type.STRING, TpchColumnTypeAdapter::hiveVarcharOf, Function.identity()),
+        VARCHAR(STRING, TpchColumnTypeAdapter::hiveVarcharOf, Function.identity()),
         /**/;
 
         static TpchColumnTypeAdapter of(TpchColumnType columnType)

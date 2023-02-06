@@ -14,6 +14,7 @@
 package io.trino.plugin.deltalake;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.airlift.units.DataSize;
 import io.trino.plugin.base.classloader.ClassLoaderSafeConnectorSplitSource;
 import io.trino.plugin.deltalake.metastore.DeltaLakeMetastore;
@@ -67,6 +68,8 @@ import static java.util.function.Function.identity;
 public class DeltaLakeSplitManager
         implements ConnectorSplitManager
 {
+    private static final Logger log = Logger.get(DeltaLakeSplitManager.class);
+
     private final TypeManager typeManager;
     private final BiFunction<ConnectorSession, HiveTransactionHandle, DeltaLakeMetastore> metastoreProvider;
     private final ExecutorService executor;
@@ -153,6 +156,7 @@ public class DeltaLakeSplitManager
                 .filter(column -> predicatedColumnNames.contains(column.getName())) // DeltaLakeColumnMetadata.name is lowercase
                 .collect(toImmutableList());
 
+        log.warn(">>> creating delta splits");
         return validDataFiles.stream()
                 .flatMap(addAction -> {
                     if (tableHandle.getAnalyzeHandle().isPresent() && !tableHandle.getAnalyzeHandle().get().isInitialAnalyze() && !addAction.isDataChange()) {
@@ -199,6 +203,7 @@ public class DeltaLakeSplitManager
                         }
                     }
 
+                    log.warn(">>> Creating delta splits for stats: " + statisticsPredicate);
                     return splitsForFile(
                             session,
                             addAction,

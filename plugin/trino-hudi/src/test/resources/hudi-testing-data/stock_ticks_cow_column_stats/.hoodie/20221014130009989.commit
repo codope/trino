@@ -1,0 +1,74 @@
+{
+  "partitionToWriteStats" : {
+    "2018/08/31" : [ {
+      "fileId" : "7196b21b-34c1-4e78-bf20-72dceb524e9e-0",
+      "path" : "2018/08/31/7196b21b-34c1-4e78-bf20-72dceb524e9e-0_0-29-29_20221014130009989.parquet",
+      "prevCommit" : "null",
+      "numWrites" : 197,
+      "numDeletes" : 0,
+      "numUpdateWrites" : 0,
+      "numInserts" : 197,
+      "totalWriteBytes" : 443915,
+      "totalWriteErrors" : 0,
+      "tempPath" : null,
+      "partitionPath" : "2018/08/31",
+      "totalLogRecords" : 0,
+      "totalLogFilesCompacted" : 0,
+      "totalLogSizeCompacted" : 0,
+      "totalUpdatedRecordsCompacted" : 0,
+      "totalLogBlocks" : 0,
+      "totalCorruptLogBlock" : 0,
+      "totalRollbackBlocks" : 0,
+      "fileSizeInBytes" : 443915,
+      "minEventTime" : null,
+      "maxEventTime" : null
+    } ]
+  },
+  "compacted" : false,
+  "extraMetadata" : {
+    "schema" : "{\"type\":\"record\",\"name\":\"stock_ticks\",\"fields\":[{\"name\":\"volume\",\"type\":\"long\"},{\"name\":\"ts\",\"type\":\"string\"},{\"name\":\"symbol\",\"type\":\"string\"},{\"name\":\"year\",\"type\":\"int\"},{\"name\":\"month\",\"type\":\"string\"},{\"name\":\"high\",\"type\":\"double\"},{\"name\":\"low\",\"type\":\"double\"},{\"name\":\"key\",\"type\":\"string\"},{\"name\":\"date\",\"type\":\"string\"},{\"name\":\"close\",\"type\":\"double\"},{\"name\":\"open\",\"type\":\"double\"},{\"name\":\"day\",\"type\":\"string\"}]}",
+    "deltastreamer.checkpoint.key" : "stock_ticks,0:3482"
+  },
+  "operationType" : "UPSERT",
+  "writeStats" : [ {
+    "fileId" : "7196b21b-34c1-4e78-bf20-72dceb524e9e-0",
+    "path" : "2018/08/31/7196b21b-34c1-4e78-bf20-72dceb524e9e-0_0-29-29_20221014130009989.parquet",
+    "prevCommit" : "null",
+    "numWrites" : 197,
+    "numDeletes" : 0,
+    "numUpdateWrites" : 0,
+    "numInserts" : 197,
+    "totalWriteBytes" : 443915,
+    "totalWriteErrors" : 0,
+    "tempPath" : null,
+    "partitionPath" : "2018/08/31",
+    "totalLogRecords" : 0,
+    "totalLogFilesCompacted" : 0,
+    "totalLogSizeCompacted" : 0,
+    "totalUpdatedRecordsCompacted" : 0,
+    "totalLogBlocks" : 0,
+    "totalCorruptLogBlock" : 0,
+    "totalRollbackBlocks" : 0,
+    "fileSizeInBytes" : 443915,
+    "minEventTime" : null,
+    "maxEventTime" : null
+  } ],
+  "fileIdAndRelativePaths" : {
+    "7196b21b-34c1-4e78-bf20-72dceb524e9e-0" : "2018/08/31/7196b21b-34c1-4e78-bf20-72dceb524e9e-0_0-29-29_20221014130009989.parquet"
+  },
+  "totalRecordsDeleted" : 0,
+  "totalLogRecordsCompacted" : 0,
+  "totalLogFilesCompacted" : 0,
+  "totalCompactedRecordsUpdated" : 0,
+  "totalLogFilesSize" : 0,
+  "totalScanTime" : 0,
+  "totalCreateTime" : 765,
+  "totalUpsertTime" : 0,
+  "minAndMaxEventTime" : {
+    "Optional.empty" : {
+      "val" : null,
+      "present" : false
+    }
+  },
+  "writePartitionPaths" : [ "2018/08/31" ]
+}
