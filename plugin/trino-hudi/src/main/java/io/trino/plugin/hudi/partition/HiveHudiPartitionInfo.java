@@ -76,12 +76,6 @@ public class HiveHudiPartitionInfo
     }
 
     @Override
-    public String getHivePartitionName()
-    {
-        return hivePartitionName;
-    }
-
-    @Override
     public List<HivePartitionKey> getHivePartitionKeys()
     {
         if (hivePartitionKeys == null) {
@@ -94,12 +88,6 @@ public class HiveHudiPartitionInfo
     public boolean doesMatchPredicates()
     {
         return partitionMatchesPredicates(table.getSchemaTableName(), hivePartitionName, partitionColumnHandles, constraintSummary);
-    }
-
-    @Override
-    public String getComparingKey()
-    {
-        return hivePartitionName;
     }
 
     @Override
