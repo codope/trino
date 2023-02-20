@@ -57,6 +57,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.trino.plugin.hive.HiveMetadata.TABLE_COMMENT;
 import static io.trino.plugin.hive.HiveTimestampPrecision.NANOSECONDS;
+import static io.trino.plugin.hive.metastore.MetastoreUtil.getHiveSchema;
 import static io.trino.plugin.hive.util.HiveUtil.columnMetadataGetter;
 import static io.trino.plugin.hive.util.HiveUtil.hiveColumnHandles;
 import static io.trino.plugin.hive.util.HiveUtil.isHiveSystemSchema;
@@ -64,7 +65,7 @@ import static io.trino.plugin.hudi.HudiErrorCode.HUDI_FILESYSTEM_ERROR;
 import static io.trino.plugin.hudi.HudiSessionProperties.getColumnsToHide;
 import static io.trino.plugin.hudi.HudiTableProperties.LOCATION_PROPERTY;
 import static io.trino.plugin.hudi.HudiTableProperties.PARTITIONED_BY_PROPERTY;
-import static io.trino.plugin.hudi.model.HoodieTableType.COPY_ON_WRITE;
+import static io.trino.plugin.hudi.HudiUtil.getTableType;
 import static io.trino.spi.StandardErrorCode.UNSUPPORTED_TABLE_TYPE;
 import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.lang.String.format;
@@ -116,9 +117,10 @@ public class HudiMetadata
                 tableName.getSchemaName(),
                 tableName.getTableName(),
                 table.get().getStorage().getLocation(),
-                COPY_ON_WRITE,
+                getTableType(table.get().getStorage().getStorageFormat().getInputFormat()),
                 TupleDomain.all(),
-                TupleDomain.all());
+                TupleDomain.all(),
+                getHiveSchema(table.get()));
     }
 
     @Override

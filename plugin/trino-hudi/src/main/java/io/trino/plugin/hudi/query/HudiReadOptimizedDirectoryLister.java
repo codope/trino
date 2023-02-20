@@ -19,6 +19,7 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiFileStatus;
 import io.trino.plugin.hudi.HudiTableHandle;
+import io.trino.plugin.hudi.model.HoodieTableType;
 import io.trino.plugin.hudi.partition.HiveHudiPartitionInfo;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
 import io.trino.spi.TrinoException;
@@ -26,7 +27,6 @@ import org.apache.hudi.common.config.HoodieMetadataConfig;
 import org.apache.hudi.common.engine.HoodieEngineContext;
 import org.apache.hudi.common.model.FileSlice;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
-import org.apache.hudi.common.table.timeline.HoodieInstant;
 import org.apache.hudi.common.table.view.FileSystemViewManager;
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView;
 import org.apache.hudi.common.util.Option;
@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
@@ -48,7 +49,7 @@ public class HudiReadOptimizedDirectoryLister
     private final HoodieTableFileSystemView fileSystemView;
     private final List<Column> partitionColumns;
     private final Map<String, HudiPartitionInfo> allPartitionInfoMap;
-    private final String latestInstant;
+    private final HoodieTableType tableType;
 
     public HudiReadOptimizedDirectoryLister(
             HoodieMetadataConfig metadataConfig,
@@ -61,12 +62,6 @@ public class HudiReadOptimizedDirectoryLister
             List<String> hivePartitionNames)
     {
         this.fileSystemView = FileSystemViewManager.createInMemoryFileSystemView(engineContext, metaClient, metadataConfig);
-        this.latestInstant = metaClient.getActiveTimeline()
-                .getCommitsTimeline()
-                .filterCompletedInstants()
-                .lastInstant()
-                .map(HoodieInstant::getTimestamp)
-                .orElseThrow(() -> new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "No commits found in the table " + tableHandle.getSchemaTableName()));
         this.partitionColumns = hiveTable.getPartitionColumns();
         this.allPartitionInfoMap = hivePartitionNames.stream()
                 .collect(Collectors.toMap(
@@ -78,12 +73,13 @@ public class HudiReadOptimizedDirectoryLister
                                 tableHandle.getPartitionPredicates(),
                                 hiveTable,
                                 hiveMetastore)));
+        this.tableType = tableHandle.getTableType();
     }
 
     @Override
-    public List<HudiFileStatus> listStatus(HudiPartitionInfo partitionInfo)
+    public List<HudiFileStatus> listStatus(HudiPartitionInfo partitionInfo, String commitTime)
     {
-        return fileSystemView.getLatestFileSlicesBeforeOrOn(partitionInfo.getRelativePartitionPath(), latestInstant, false)
+        return fileSystemView.getLatestFileSlicesBeforeOrOn(partitionInfo.getRelativePartitionPath(), commitTime, false)
                 .map(FileSlice::getBaseFile)
                 .filter(Option::isPresent)
                 .map(baseFile -> {
@@ -101,6 +97,15 @@ public class HudiReadOptimizedDirectoryLister
                         status.getModificationTime(),
                         status.getBlockSize()))
                 .collect(toImmutableList());
+    }
+
+    @Override
+    public List<FileSlice> listFileSlice(HudiPartitionInfo partitionInfo, String commitTime)
+    {
+        Stream<FileSlice> fileSlices = HoodieTableType.MERGE_ON_READ.equals(tableType) ?
+                fileSystemView.getLatestMergedFileSlicesBeforeOrOn(partitionInfo.getRelativePartitionPath(), commitTime) :
+                fileSystemView.getLatestFileSlicesBeforeOrOn(partitionInfo.getRelativePartitionPath(), commitTime, false);
+        return fileSlices.collect(toImmutableList());
     }
 
     @Override

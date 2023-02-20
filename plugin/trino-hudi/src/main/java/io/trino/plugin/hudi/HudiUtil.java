@@ -24,6 +24,7 @@ import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.HivePartitionManager;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.plugin.hudi.model.HoodieFileFormat;
+import io.trino.plugin.hudi.model.HoodieTableType;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.ConnectorSession;
@@ -41,8 +42,11 @@ import java.util.Map;
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.util.HiveUtil.checkCondition;
 import static io.trino.plugin.hive.util.HiveUtil.parsePartitionValue;
+import static io.trino.plugin.hudi.HudiErrorCode.HUDI_BAD_DATA;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNSUPPORTED_FILE_FORMAT;
 import static java.util.stream.Collectors.toList;
+import static io.trino.plugin.hudi.model.HoodieTableType.COPY_ON_WRITE;
+import static io.trino.plugin.hudi.model.HoodieTableType.MERGE_ON_READ;
 
 public final class HudiUtil
 {
@@ -155,5 +159,20 @@ public final class HudiUtil
         // Do not load the bootstrap index, will not read bootstrap base data or a mapping index defined
         client.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
         return client;
+    }
+
+    public static HoodieTableType getTableType(String inputFormatName)
+    {
+        return switch (inputFormatName) {
+            case "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat", "org.apache.hudi.hadoop.HoodieParquetInputFormat", "com.uber.hoodie.hadoop.HoodieInputFormat" -> COPY_ON_WRITE;
+            case "org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat", "com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat" -> MERGE_ON_READ;
+            default -> throw new TrinoException(HUDI_BAD_DATA, "Unknown table type for input format: " + inputFormatName);
+        };
+    }
+
+    public static HudiFile getHudiBaseFile(HudiSplit hudiSplit)
+    {
+        // use first log file as base file for MOR table if it hasn't base file
+        return hudiSplit.getBaseFile().orElse(hudiSplit.getLogFiles().get(0));
     }
 }
