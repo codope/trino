@@ -15,23 +15,30 @@ package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import io.airlift.units.DataSize;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartition;
 import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.HivePartitionManager;
 import io.trino.plugin.hive.metastore.Column;
+import io.trino.plugin.hudi.split.HudiSplitWeightProvider;
+import io.trino.plugin.hudi.split.SizeBasedSplitWeightProvider;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ColumnHandle;
+import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.NullableValue;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Type;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.common.fs.FSUtils;
 import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodieFileFormat;
+import org.apache.hudi.common.model.HoodieTableType;
+import org.apache.hudi.common.table.HoodieTableMetaClient;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 
@@ -43,8 +50,14 @@ import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.util.HiveUtil.checkCondition;
 import static io.trino.plugin.hive.util.HiveUtil.parsePartitionValue;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
+import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNKNOWN_TABLE_TYPE;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNSUPPORTED_FILE_FORMAT;
+import static io.trino.plugin.hudi.HudiSessionProperties.getMinimumAssignedSplitWeight;
+import static io.trino.plugin.hudi.HudiSessionProperties.getStandardSplitWeightSize;
+import static io.trino.plugin.hudi.HudiSessionProperties.isSizeBasedSplitWeightsEnabled;
 import static java.util.stream.Collectors.toList;
+import static org.apache.hudi.common.model.HoodieTableType.COPY_ON_WRITE;
+import static org.apache.hudi.common.model.HoodieTableType.MERGE_ON_READ;
 
 public final class HudiUtil
 {
@@ -160,5 +173,40 @@ public final class HudiUtil
         catch (IOException e) {
             throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Error getting file status of " + baseFile.getPath(), e);
         }
+    }
+
+    public static HoodieTableType getTableType(String inputFormatName)
+    {
+        return switch (inputFormatName) {
+            case "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+                    "org.apache.hudi.hadoop.HoodieParquetInputFormat",
+                    "com.uber.hoodie.hadoop.HoodieInputFormat" -> COPY_ON_WRITE;
+            case "org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat",
+                    "com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat" -> MERGE_ON_READ;
+            default -> throw new TrinoException(HUDI_UNKNOWN_TABLE_TYPE, "Unknown table type for input format: " + inputFormatName);
+        };
+    }
+
+    public static HudiFile getHudiBaseFile(HudiSplit hudiSplit)
+    {
+        // use first log file as base file for MOR table if it hasn't base file
+        return hudiSplit.getBaseFile().orElse(hudiSplit.getLogFiles().get(0));
+    }
+
+    public static HoodieTableMetaClient buildTableMetaClient(Configuration configuration, String basePath)
+    {
+        HoodieTableMetaClient client = HoodieTableMetaClient.builder().setConf(configuration).setBasePath(basePath).build();
+        client.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
+        return client;
+    }
+
+    public static HudiSplitWeightProvider createSplitWeightProvider(ConnectorSession session)
+    {
+        if (isSizeBasedSplitWeightsEnabled(session)) {
+            DataSize standardSplitWeightSize = getStandardSplitWeightSize(session);
+            double minimumAssignedSplitWeight = getMinimumAssignedSplitWeight(session);
+            return new SizeBasedSplitWeightProvider(minimumAssignedSplitWeight, standardSplitWeightSize);
+        }
+        return HudiSplitWeightProvider.uniformStandardWeightProvider();
     }
 }

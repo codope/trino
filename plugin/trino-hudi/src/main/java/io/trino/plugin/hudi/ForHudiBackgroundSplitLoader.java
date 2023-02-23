@@ -11,22 +11,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.trino.plugin.hudi.query;
 
-import io.trino.plugin.hudi.partition.HudiPartitionInfo;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hudi.common.model.FileSlice;
+package io.trino.plugin.hudi;
 
-import java.io.Closeable;
-import java.util.List;
-import java.util.Optional;
+import javax.inject.Qualifier;
 
-public interface HudiDirectoryLister
-        extends Closeable
+import java.lang.annotation.Retention;
+import java.lang.annotation.Target;
+
+import static java.lang.annotation.ElementType.FIELD;
+import static java.lang.annotation.ElementType.METHOD;
+import static java.lang.annotation.ElementType.PARAMETER;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
+@Retention(RUNTIME)
+@Target({FIELD, PARAMETER, METHOD})
+@Qualifier
+public @interface ForHudiBackgroundSplitLoader
 {
-    List<FileStatus> listStatus(HudiPartitionInfo partitionInfo, String commitTime);
-
-    List<FileSlice> listFileSlice(HudiPartitionInfo partitionInfo, String commitTime);
-
-    Optional<HudiPartitionInfo> getPartitionInfo(String partition);
 }
