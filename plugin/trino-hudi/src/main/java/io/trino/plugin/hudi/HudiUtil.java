@@ -21,41 +21,27 @@ import io.trino.plugin.hive.HivePartitionKey;
 import io.trino.plugin.hive.HivePartitionManager;
 import io.trino.plugin.hive.metastore.Column;
 import io.trino.spi.TrinoException;
-import io.trino.spi.connector.ColumnHandle;
 import io.trino.spi.connector.SchemaTableName;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.NullableValue;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Type;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.common.fs.FSUtils;
-import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
-import org.apache.hudi.hadoop.HoodieParquetInputFormat;
-import org.apache.hudi.hadoop.utils.HoodieInputFormatUtils;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.util.HiveUtil.checkCondition;
-import static io.trino.plugin.hive.util.HiveUtil.parsePartitionValue;
-import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_UNSUPPORTED_FILE_FORMAT;
 import static java.util.stream.Collectors.toList;
 
 public final class HudiUtil
 {
     private HudiUtil() {}
-
-    public static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)
-    {
-        return inputFormat instanceof HoodieParquetInputFormat;
-    }
 
     public static HoodieFileFormat getHudiFileFormat(String path)
     {
@@ -88,40 +74,6 @@ public final class HudiUtil
                 tableName, hivePartitionName, partitionColumnHandles, partitionColumnTypes);
 
         return partitionMatches(partitionColumnHandles, constraintSummary, partition);
-    }
-
-    public static boolean partitionMatchesPredicates(
-            SchemaTableName tableName,
-            String relativePartitionPath,
-            List<String> partitionValues,
-            List<HiveColumnHandle> partitionColumnHandles,
-            TupleDomain<HiveColumnHandle> constraintSummary)
-    {
-        List<Type> partitionColumnTypes = partitionColumnHandles.stream()
-                .map(HiveColumnHandle::getType)
-                .collect(toList());
-        HivePartition partition = parsePartition(
-                tableName, relativePartitionPath, partitionValues, partitionColumnHandles, partitionColumnTypes);
-
-        return partitionMatches(partitionColumnHandles, constraintSummary, partition);
-    }
-
-    private static HivePartition parsePartition(
-            SchemaTableName tableName,
-            String partitionName,
-            List<String> partitionValues,
-            List<HiveColumnHandle> partitionColumns,
-            List<Type> partitionColumnTypes)
-    {
-        ImmutableMap.Builder<ColumnHandle, NullableValue> builder = ImmutableMap.builder();
-        for (int i = 0; i < partitionColumns.size(); i++) {
-            HiveColumnHandle column = partitionColumns.get(i);
-            NullableValue parsedValue = parsePartitionValue(
-                    partitionName, partitionValues.get(i), partitionColumnTypes.get(i));
-            builder.put(column, parsedValue);
-        }
-        Map<ColumnHandle, NullableValue> values = builder.buildOrThrow();
-        return new HivePartition(tableName, partitionName, values);
     }
 
     public static boolean partitionMatches(List<HiveColumnHandle> partitionColumns, TupleDomain<HiveColumnHandle> constraintSummary, HivePartition partition)
@@ -160,15 +112,5 @@ public final class HudiUtil
         // Do not load the bootstrap index, will not read bootstrap base data or a mapping index defined
         client.getTableConfig().setValue("hoodie.bootstrap.index.enable", "false");
         return client;
-    }
-
-    public static FileStatus getFileStatus(HoodieBaseFile baseFile)
-    {
-        try {
-            return HoodieInputFormatUtils.getFileStatus(baseFile);
-        }
-        catch (IOException e) {
-            throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Error getting file status of " + baseFile.getPath(), e);
-        }
     }
 }

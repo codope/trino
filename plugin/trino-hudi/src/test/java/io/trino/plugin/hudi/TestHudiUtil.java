@@ -14,6 +14,7 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.hadoop.mapred.InputFormat;
 import org.apache.hudi.hadoop.HoodieParquetInputFormat;
 import org.testng.annotations.Test;
 
@@ -23,7 +24,6 @@ import java.util.Properties;
 import static io.trino.hadoop.ConfigurationInstantiator.newEmptyConfiguration;
 import static io.trino.plugin.hive.HiveStorageFormat.PARQUET;
 import static io.trino.plugin.hive.util.HiveUtil.getInputFormat;
-import static io.trino.plugin.hudi.HudiUtil.isHudiParquetInputFormat;
 import static org.apache.hadoop.hive.common.FileUtils.unescapePathName;
 import static org.apache.hadoop.hive.metastore.api.hive_metastoreConstants.FILE_INPUT_FORMAT;
 import static org.apache.hadoop.hive.serde.serdeConstants.SERIALIZATION_LIB;
@@ -84,5 +84,10 @@ public class TestHudiUtil
             }
         }
         return values.build();
+    }
+
+    private static boolean isHudiParquetInputFormat(InputFormat<?, ?> inputFormat)
+    {
+        return inputFormat instanceof HoodieParquetInputFormat;
     }
 }
