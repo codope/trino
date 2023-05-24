@@ -20,6 +20,7 @@ import io.airlift.compress.lzo.LzoCodec;
 import io.airlift.compress.lzo.LzopCodec;
 import io.trino.hdfs.HdfsContext;
 import io.trino.hdfs.HdfsEnvironment;
+import io.trino.plugin.hive.GenericHiveRecordCursor;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.spi.TrinoException;
@@ -48,7 +49,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.Lists.newArrayList;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
 import static io.trino.plugin.hudi.HudiUtil.getHudiBaseFile;
-import static io.trino.plugin.hudi.query.HiveHudiRecordCursor.createRecordCursor;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -70,12 +70,22 @@ class HudiRecordCursor
         checkArgument(dataColumns.stream().allMatch(HudiRecordCursor::isRegularColumn), "dataColumns contains non regular column");
         HudiFile baseFile = getHudiBaseFile(split);
         Path path = new Path(baseFile.getPath());
-        Configuration configuration = hdfsEnvironment.getConfiguration(new HdfsContext(session), path);
 
         return hdfsEnvironment.doAs(session.getIdentity(), () -> {
-            RecordReader<?, ?> recordReader = createRecordReader(configuration, tableHandle.getSchema(), split, dataColumns, tableHandle.getBasePath());
+            RecordReader<?, ?> recordReader = createRecordReader(
+                    hdfsEnvironment.getConfiguration(new HdfsContext(session), path),
+                    tableHandle.getSchema(),
+                    split,
+                    dataColumns,
+                    tableHandle.getBasePath());
             @SuppressWarnings("unchecked") RecordReader<?, ? extends Writable> reader = (RecordReader<?, ? extends Writable>) recordReader;
-            return createRecordCursor(configuration, path, reader, baseFile.getLength(), tableHandle.getSchema(), dataColumns);
+            return new GenericHiveRecordCursor(
+                    hdfsEnvironment.getConfiguration(new HdfsContext(session), path),
+                    path,
+                    reader,
+                    baseFile.getLength(),
+                    tableHandle.getSchema(),
+                    dataColumns);
         });
     }
 
