@@ -15,7 +15,7 @@
 
     <properties>
         <air.main.basedir>${project.parent.basedir}</air.main.basedir>
-        <dep.hudi.version>0.12.3</dep.hudi.version>
+        <dep.hudi.version>0.14.0-SNAPSHOT</dep.hudi.version>
     </properties>
 
     <dependencies>
@@ -62,11 +62,6 @@
         <dependency>
             <groupId>io.trino.hive</groupId>
             <artifactId>hive-apache</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>io.airlift</groupId>
-            <artifactId>aircompressor</artifactId>
         </dependency>
 
         <dependency>

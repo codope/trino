@@ -14,13 +14,10 @@
 package io.trino.plugin.hudi;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Splitter;
-import io.airlift.compress.lzo.LzoCodec;
-import io.airlift.compress.lzo.LzopCodec;
 import io.trino.hdfs.HdfsContext;
 import io.trino.hdfs.HdfsEnvironment;
+import io.trino.plugin.hive.GenericHiveRecordCursor;
 import io.trino.plugin.hive.HiveColumnHandle;
-import io.trino.plugin.hive.util.HiveUtil;
 import io.trino.plugin.hudi.files.HudiFile;
 import io.trino.spi.TrinoException;
 import io.trino.spi.connector.ConnectorSession;
@@ -45,10 +42,10 @@ import java.util.function.Function;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.collect.Lists.newArrayList;
+import static io.trino.plugin.hive.util.HiveUtil.configureCompressionCodecs;
+import static io.trino.plugin.hive.util.HiveUtil.getInputFormatName;
 import static io.trino.plugin.hudi.HudiErrorCode.HUDI_CANNOT_OPEN_SPLIT;
 import static io.trino.plugin.hudi.HudiUtil.getHudiBaseFile;
-import static io.trino.plugin.hudi.query.HiveHudiRecordCursor.createRecordCursor;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toList;
@@ -76,7 +73,13 @@ public class HudiRecordCursor
         return hdfsEnvironment.doAs(session.getIdentity(), () -> {
             RecordReader<?, ?> recordReader = createRecordReader(configuration, tableHandle.getSchema(), split, dataColumns, tableHandle.getBasePath());
             @SuppressWarnings("unchecked") RecordReader<?, ? extends Writable> reader = (RecordReader<?, ? extends Writable>) recordReader;
-            return createRecordCursor(configuration, path, reader, baseFile.getFileSize(), tableHandle.getSchema(), dataColumns);
+            return new GenericHiveRecordCursor<>(
+                    configuration,
+                    path,
+                    reader,
+                    baseFile.getFileSize(),
+                    tableHandle.getSchema(),
+                    dataColumns);
         });
     }
 
@@ -94,13 +97,9 @@ public class HudiRecordCursor
         jobConf.set(READ_COLUMN_NAMES_CONF_STR, join(dataColumns, HiveColumnHandle::getName));
         schema.stringPropertyNames()
                 .forEach(name -> jobConf.set(name, schema.getProperty(name)));
-        refineCompressionCodecs(jobConf);
-
-        // create input format
-        String inputFormatName = HiveUtil.getInputFormatName(schema);
-        InputFormat<?, ?> inputFormat = createInputFormat(jobConf, inputFormatName);
-
+        configureCompressionCodecs(jobConf);
         // create record reader for split
+        String inputFormatName = getInputFormatName(schema);
         try {
             HudiFile baseFile = getHudiBaseFile(split);
             Path path = new Path(baseFile.getLocation().toString());
@@ -109,41 +108,18 @@ public class HudiRecordCursor
                     .stream()
                     .map(file -> new HoodieLogFile(file.getLocation().toString())).collect(toList());
             FileSplit hudiSplit = new HoodieRealtimeFileSplit(fileSplit, basePath, logFiles, split.getCommitTime(), false, Option.empty());
+            Class<?> clazz = jobConf.getClassByName(inputFormatName);
+            @SuppressWarnings("unchecked") Class<? extends InputFormat<?, ?>> cls = (Class<? extends InputFormat<?, ?>>) clazz.asSubclass(InputFormat.class);
+            InputFormat<?, ?> inputFormat = ReflectionUtils.newInstance(cls, jobConf);
             return inputFormat.getRecordReader(hudiSplit, jobConf, Reporter.NULL);
         }
-        catch (IOException e) {
+        catch (IOException | ClassNotFoundException | RuntimeException e) {
             String msg = format("Error opening Hive split %s using %s: %s",
                     split,
                     inputFormatName,
                     firstNonNull(e.getMessage(), e.getClass().getName()));
             throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, msg, e);
         }
-    }
-
-    private static InputFormat<?, ?> createInputFormat(Configuration conf, String inputFormat)
-    {
-        try {
-            Class<?> clazz = conf.getClassByName(inputFormat);
-            @SuppressWarnings("unchecked") Class<? extends InputFormat<?, ?>> cls =
-                    (Class<? extends InputFormat<?, ?>>) clazz.asSubclass(InputFormat.class);
-            return ReflectionUtils.newInstance(cls, conf);
-        }
-        catch (ClassNotFoundException | RuntimeException e) {
-            throw new TrinoException(HUDI_CANNOT_OPEN_SPLIT, "Unable to create input format " + inputFormat, e);
-        }
-    }
-
-    private static void refineCompressionCodecs(Configuration conf)
-    {
-        List<String> codecs = newArrayList(Splitter.on(",").trimResults().omitEmptyStrings()
-                .split(conf.get("io.compression.codecs", "")));
-        if (!codecs.contains(LzoCodec.class.getName())) {
-            codecs.add(0, LzoCodec.class.getName());
-        }
-        if (!codecs.contains(LzopCodec.class.getName())) {
-            codecs.add(0, LzopCodec.class.getName());
-        }
-        conf.set("io.compression.codecs", String.join(",", codecs));
     }
 
     private static <T, V> String join(List<T> list, Function<T, V> extractor)

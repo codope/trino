@@ -322,7 +322,7 @@ public final class HiveUtil
         configuration.setBoolean(READ_ALL_COLUMNS, false);
     }
 
-    private static void configureCompressionCodecs(JobConf jobConf)
+    public static void configureCompressionCodecs(JobConf jobConf)
     {
         // add Airlift LZO and LZOP to head of codecs list to not override existing entries
         List<String> codecs = newArrayList(Splitter.on(",").trimResults().omitEmptyStrings().split(jobConf.get("io.compression.codecs", "")));
