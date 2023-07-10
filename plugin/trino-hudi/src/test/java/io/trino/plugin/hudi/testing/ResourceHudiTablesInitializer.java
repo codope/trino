@@ -155,6 +155,7 @@ public class ResourceHudiTablesInitializer
     public enum TestingTable
     {
         HUDI_NON_PART_COW(nonPartitionRegularColumns()),
+        HUDI_NON_PART_COW_CLUSTERED(nonPartitionRegularColumns()),
         HUDI_COW_PT_TBL(multiPartitionRegularColumns(), multiPartitionColumns(), multiPartitions()),
         STOCK_TICKS_COW(stockTicksRegularColumns(), stockTicksPartitionColumns(), stockTicksPartitions()),
         STOCK_TICKS_MOR(stockTicksRegularColumns(), stockTicksPartitionColumns(), stockTicksPartitions()),

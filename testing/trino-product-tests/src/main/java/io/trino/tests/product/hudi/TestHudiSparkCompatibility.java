@@ -320,6 +320,44 @@ public class TestHudiSparkCompatibility
         }
     }
 
+    @Test(groups = {HUDI, PROFILE_SPECIFIC_TESTS})
+    public void testReadCopyOnWriteTableWithReplaceCommits()
+    {
+        String tableName = "test_hudi_cow_replace_commits_select_" + randomNameSuffix();
+
+        onHudi().executeQuery(format(
+                """
+                        CREATE TABLE default.%s (
+                          id bigint,
+                          name string,
+                          price int,
+                          ts bigint)
+                        USING hudi
+                        TBLPROPERTIES (
+                          type = '%s',
+                          primaryKey = 'id',
+                          preCombineField = 'ts',
+                          hoodie.clustering.inline = 'true',
+                          hoodie.clustering.inline.max.commits = '1')
+                        LOCATION 's3://%s/%s'""",
+                tableName,
+                COW_TABLE_TYPE,
+                bucketName,
+                tableName));
+
+        onHudi().executeQuery("INSERT INTO default." + tableName + " VALUES (1, 'a1', 20, 1000), (2, 'a2', 40, 2000)");
+
+        try {
+            assertThat(onTrino().executeQuery("SELECT id, name FROM hudi.default." + tableName + ";"))
+                    .containsOnly(
+                            row(1, "a1"),
+                            row(2, "a2"));
+        }
+        finally {
+            onHudi().executeQuery("DROP TABLE default." + tableName);
+        }
+    }
+
     private void createNonPartitionedTable(String tableName, String tableType)
     {
         onHudi().executeQuery(format(

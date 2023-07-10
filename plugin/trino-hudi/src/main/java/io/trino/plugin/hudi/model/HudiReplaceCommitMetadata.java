@@ -13,9 +13,10 @@
  */
 package io.trino.plugin.hudi.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.collect.ImmutableMap;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -27,14 +28,16 @@ import static com.google.common.base.MoreObjects.toStringHelper;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class HudiReplaceCommitMetadata
 {
-    private Map<String, List<String>> partitionToReplaceFileIds;
-    private Boolean compacted;
+    private final Map<String, List<String>> partitionToReplaceFileIds;
+    private final Boolean compacted;
 
-    // for ser/deser
-    public HudiReplaceCommitMetadata()
+    @JsonCreator(mode = JsonCreator.Mode.PROPERTIES)
+    public HudiReplaceCommitMetadata(
+            @JsonProperty("partitionToReplaceFileIds") Map<String, List<String>> partitionToReplaceFileIds,
+            @JsonProperty("compacted") Boolean compacted)
     {
-        partitionToReplaceFileIds = ImmutableMap.of();
-        compacted = false;
+        this.partitionToReplaceFileIds = partitionToReplaceFileIds;
+        this.compacted = compacted;
     }
 
     public Map<String, List<String>> getPartitionToReplaceFileIds()

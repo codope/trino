@@ -26,6 +26,7 @@ import java.time.ZonedDateTime;
 import static io.trino.plugin.hudi.HudiQueryRunner.createHudiQueryRunner;
 import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.HUDI_COW_PT_TBL;
 import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.HUDI_NON_PART_COW;
+import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.HUDI_NON_PART_COW_CLUSTERED;
 import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.STOCK_TICKS_COW;
 import static io.trino.plugin.hudi.testing.ResourceHudiTablesInitializer.TestingTable.STOCK_TICKS_MOR;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,6 +61,13 @@ public class TestHudiSmokeTest
 
         assertQuery("SELECT dt, count(1) FROM " + STOCK_TICKS_MOR + " GROUP BY dt",
                 "SELECT * FROM VALUES ('2018-08-31', '99')");
+    }
+
+    @Test
+    public void testReadTableWithReplaceCommits()
+    {
+        assertQuery("SELECT rowId, name FROM " + HUDI_NON_PART_COW_CLUSTERED,
+                "SELECT * FROM VALUES ('row_1', 'bob'), ('row_2', 'john'), ('row_3', 'tom')");
     }
 
     @Test
