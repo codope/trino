@@ -188,9 +188,9 @@ public final class HiveUtil
 
     // Input formats class names are listed below as String due to hudi-hadoop-mr dependency is not in the context of trino-hive plugin
     public static final String HUDI_PARQUET_INPUT_FORMAT = "org.apache.hudi.hadoop.HoodieParquetInputFormat";
-    private static final String HUDI_PARQUET_REALTIME_INPUT_FORMAT = "org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat";
-    private static final String HUDI_INPUT_FORMAT = "com.uber.hoodie.hadoop.HoodieInputFormat";
-    private static final String HUDI_REALTIME_INPUT_FORMAT = "com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat";
+    public static final String HUDI_PARQUET_REALTIME_INPUT_FORMAT = "org.apache.hudi.hadoop.realtime.HoodieParquetRealtimeInputFormat";
+    public static final String HUDI_INPUT_FORMAT = "com.uber.hoodie.hadoop.HoodieInputFormat";
+    public static final String HUDI_REALTIME_INPUT_FORMAT = "com.uber.hoodie.hadoop.realtime.HoodieRealtimeInputFormat";
 
     private static final HexFormat HEX_UPPER_FORMAT = HexFormat.of().withUpperCase();
 
@@ -322,7 +322,7 @@ public final class HiveUtil
         configuration.setBoolean(READ_ALL_COLUMNS, false);
     }
 
-    private static void configureCompressionCodecs(JobConf jobConf)
+    public static void configureCompressionCodecs(JobConf jobConf)
     {
         // add Airlift LZO and LZOP to head of codecs list to not override existing entries
         List<String> codecs = newArrayList(Splitter.on(",").trimResults().omitEmptyStrings().split(jobConf.get("io.compression.codecs", "")));

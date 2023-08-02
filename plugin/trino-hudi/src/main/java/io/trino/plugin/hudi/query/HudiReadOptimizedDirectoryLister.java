@@ -19,6 +19,7 @@ import io.trino.plugin.hive.metastore.HiveMetastore;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hudi.HudiFileStatus;
 import io.trino.plugin.hudi.HudiTableHandle;
+import io.trino.plugin.hudi.files.FileSlice;
 import io.trino.plugin.hudi.files.HudiBaseFile;
 import io.trino.plugin.hudi.partition.HiveHudiPartitionInfo;
 import io.trino.plugin.hudi.partition.HudiPartitionInfo;
@@ -74,6 +75,12 @@ public class HudiReadOptimizedDirectoryLister
                         fileEntry.lastModified().toEpochMilli(),
                         fileEntry.blocks().map(listOfBlocks -> (!listOfBlocks.isEmpty()) ? listOfBlocks.get(0).length() : 0).orElse(0L)))
                 .collect(toImmutableList());
+    }
+
+    @Override
+    public List<FileSlice> listFileSlicesBeforeOn(HudiPartitionInfo partitionInfo, String commitTime)
+    {
+        return fileSystemView.getLatestFileSlicesBeforeOn(partitionInfo.getRelativePartitionPath(), commitTime).toList();
     }
 
     @Override
