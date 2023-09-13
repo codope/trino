@@ -71,7 +71,7 @@ TAG_PREFIX="trino:${TRINO_VERSION}"
 
 for arch in "${ARCHITECTURES[@]}"; do
     echo "🫙  Building the image for $arch"
-    docker build \
+    docker build --load \
         "${WORK_DIR}" \
         --pull \
         --platform "linux/$arch" \
