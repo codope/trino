@@ -17,12 +17,16 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.trino.plugin.hive.HiveColumnHandle;
 import io.trino.plugin.hive.HivePartitionKey;
+import io.trino.plugin.hudi.file.HudiBaseFile;
 import io.trino.spi.SplitWeight;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.predicate.TupleDomain;
+import org.apache.hudi.common.model.HoodieBaseFile;
+import org.apache.hudi.common.model.HoodieLogFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -60,11 +64,9 @@ public record HudiSplit(
     public Map<String, String> getSplitInfo()
     {
         return ImmutableMap.<String, String>builder()
-                .put("location", location)
-                .put("start", String.valueOf(start))
-                .put("length", String.valueOf(length))
-                .put("fileSize", String.valueOf(fileSize))
-                .put("fileModifiedTime", String.valueOf(fileModifiedTime))
+                .put("baseFile", baseFile.toString())
+                .put("logFiles", logFiles.toString())
+                .put("commitTime", commitTime)
                 .buildOrThrow();
     }
 
@@ -72,7 +74,9 @@ public record HudiSplit(
     public long getRetainedSizeInBytes()
     {
         return INSTANCE_SIZE
-                + estimatedSizeOf(location)
+                + 10
+                + 10
+                + estimatedSizeOf(commitTime)
                 + splitWeight.getRetainedSizeInBytes()
                 + predicate.getRetainedSizeInBytes(HiveColumnHandle::getRetainedSizeInBytes)
                 + estimatedSizeOf(partitionKeys, HivePartitionKey::estimatedSizeInBytes);
@@ -82,11 +86,9 @@ public record HudiSplit(
     public String toString()
     {
         return toStringHelper(this)
-                .addValue(location)
-                .addValue(start)
-                .addValue(length)
-                .addValue(fileSize)
-                .addValue(fileModifiedTime)
+                .addValue(baseFile)
+                .addValue(logFiles)
+                .addValue(commitTime)
                 .toString();
     }
 }
