@@ -21,26 +21,20 @@ import io.trino.plugin.hudi.file.HudiBaseFile;
 import io.trino.spi.SplitWeight;
 import io.trino.spi.connector.ConnectorSplit;
 import io.trino.spi.predicate.TupleDomain;
-import org.apache.hudi.common.model.HoodieBaseFile;
-import org.apache.hudi.common.model.HoodieLogFile;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
-import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.slice.SizeOf.estimatedSizeOf;
 import static io.airlift.slice.SizeOf.instanceSize;
 import static java.lang.Math.toIntExact;
 import static java.util.Objects.requireNonNull;
 
 public record HudiSplit(
-        String location,
-        long start,
-        long length,
-        long fileSize,
-        long fileModifiedTime,
+        HudiBaseFile baseFile,
+        List<String> logFiles,
+        String commitTime,
         TupleDomain<HiveColumnHandle> predicate,
         List<HivePartitionKey> partitionKeys,
         SplitWeight splitWeight)
@@ -50,11 +44,8 @@ public record HudiSplit(
 
     public HudiSplit
     {
-        checkArgument(start >= 0, "start must be positive");
-        checkArgument(length >= 0, "length must be positive");
-        checkArgument(start + length <= fileSize, "fileSize must be at least start + length");
-
-        requireNonNull(location, "location is null");
+        requireNonNull(commitTime, "commitTime is null");
+        requireNonNull(logFiles, "logFiles is null");
         requireNonNull(predicate, "predicate is null");
         partitionKeys = ImmutableList.copyOf(partitionKeys);
         requireNonNull(splitWeight, "splitWeight is null");

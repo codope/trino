@@ -52,7 +52,6 @@ import io.trino.spi.connector.EmptyPageSource;
 import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.Decimals;
 import io.trino.spi.type.TypeSignature;
-import org.apache.hudi.common.model.HoodieBaseFile;
 import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.storage.StoragePath;
 import org.apache.parquet.column.ColumnDescriptor;
@@ -152,16 +151,16 @@ public class HudiPageSourceProvider
             DynamicFilter dynamicFilter)
     {
         HudiSplit split = (HudiSplit) connectorSplit;
-        String dataFilePath = split.getBaseFile().isPresent()
-                ? split.getBaseFile().get().getPath()
-                : split.getLogFiles().get(0);
+        String dataFilePath = split.baseFile() != null
+                ? split.baseFile().getPath()
+                : split.logFiles().getFirst();
         // Filter out metadata table splits
         if (dataFilePath.contains(new StoragePath(
                 ((HudiTableHandle) connectorTable).getBasePath()).toUri().getPath() + "/.hoodie/metadata")) {
             return new EmptyPageSource();
         }
-        if (split.getLogFiles().isEmpty()) {
-            HudiBaseFile baseFile = split.getBaseFile().get();
+        if (split.logFiles().isEmpty()) {
+            HudiBaseFile baseFile = split.baseFile();
             String path = baseFile.getPath();
             HoodieFileFormat hudiFileFormat = getHudiFileFormat(path);
             if (!HoodieFileFormat.PARQUET.equals(hudiFileFormat)) {
@@ -189,9 +188,9 @@ public class HudiPageSourceProvider
                     timeZone);
 
             return new HudiReadOptimizedPageSource(
-                    toPartitionName(split.getPartitionKeys()),
+                    toPartitionName(split.partitionKeys()),
                     hiveColumns,
-                    convertPartitionValues(hiveColumns, split.getPartitionKeys()), // create blocks for partition values
+                    convertPartitionValues(hiveColumns, split.partitionKeys()), // create blocks for partition values
                     dataPageSource,
                     path,
                     baseFile.getFileSize(),
@@ -199,7 +198,7 @@ public class HudiPageSourceProvider
         }
 
         HudiTableHandle hudiTableHandle = (HudiTableHandle) connectorTable;
-        HudiBaseFile baseFile = split.getBaseFile().get();
+        HudiBaseFile baseFile = split.baseFile();
         String path = baseFile.getPath();
         HoodieFileFormat hudiFileFormat = getHudiFileFormat(path);
         if (!HoodieFileFormat.PARQUET.equals(hudiFileFormat)) {
@@ -226,7 +225,7 @@ public class HudiPageSourceProvider
                         .withVectorizedDecodingEnabled(isParquetVectorizedDecodingEnabled(session)),
                 timeZone);
         return new HudiSnapshotPageSource(
-                split.getPartitionKeys(),
+                split.partitionKeys(),
                 new HudiTrinoStorage(fileSystemFactory.create(session), new TrinoStorageConfiguration()),
                 hudiTableHandle.getBasePath(),
                 split,
@@ -249,7 +248,7 @@ public class HudiPageSourceProvider
     {
         ParquetDataSource dataSource = null;
         boolean useColumnNames = shouldUseParquetColumnNames(session);
-        HudiBaseFile baseFile = hudiSplit.getBaseFile().get();
+        HudiBaseFile baseFile = hudiSplit.baseFile();
         String path = baseFile.getPath();
         long start = baseFile.getStart();
         long length = baseFile.getLength();

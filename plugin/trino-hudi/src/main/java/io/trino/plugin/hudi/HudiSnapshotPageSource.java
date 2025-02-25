@@ -32,13 +32,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.base.Verify.verify;
 import static io.trino.plugin.hudi.HudiUtil.constructSchema;
-import static io.trino.spi.type.Decimals.encodeShortScaledValue;
-import static io.trino.spi.type.LongTimestampWithTimeZone.fromEpochMillisAndFraction;
-import static java.lang.Math.floorDiv;
-import static java.lang.Math.floorMod;
-import static java.lang.String.format;
 import static org.apache.hudi.common.model.HoodieRecord.HOODIE_META_COLUMNS;
 
 public class HudiSnapshotPageSource
@@ -207,9 +201,9 @@ public class HudiSnapshotPageSource
         return HoodieMergedLogRecordScanner.newBuilder()
                 .withStorage(storage)
                 .withBasePath(basePath)
-                .withLogFilePaths(split.getLogFiles())
+                .withLogFilePaths(split.logFiles())
                 .withReaderSchema(readerSchema)
-                .withLatestInstantTime(split.getCommitTime())
+                .withLatestInstantTime(split.commitTime())
                 .withMaxMemorySizeInBytes(1 * 1024 * 1024L)
                 .withReverseReader(false)
                 .withBufferSize(1024 * 1024)

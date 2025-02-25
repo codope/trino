@@ -16,8 +16,6 @@ package io.trino.plugin.hudi;
 import com.google.common.collect.ImmutableList;
 import io.trino.filesystem.TrinoFileSystem;
 import io.trino.metastore.Table;
-import io.trino.plugin.hudi.model.HudiInstant;
-import io.trino.plugin.hudi.table.HudiTableMetaClient;
 import io.trino.spi.connector.ColumnMetadata;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorTableMetadata;

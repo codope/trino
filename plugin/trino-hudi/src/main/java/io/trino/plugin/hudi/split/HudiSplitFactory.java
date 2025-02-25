@@ -16,7 +16,6 @@ package io.trino.plugin.hudi.split;
 import com.google.common.collect.ImmutableList;
 import io.airlift.units.DataSize;
 import io.trino.plugin.hive.HivePartitionKey;
-import io.trino.plugin.hudi.HudiFileStatus;
 import io.trino.plugin.hudi.HudiSplit;
 import io.trino.plugin.hudi.HudiTableHandle;
 import io.trino.plugin.hudi.file.HudiBaseFile;
@@ -27,7 +26,6 @@ import org.apache.hudi.common.util.Option;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.units.DataSize.Unit.MEGABYTE;
@@ -54,7 +52,7 @@ public class HudiSplitFactory
     public List<HudiSplit> createSplits(List<HivePartitionKey> partitionKeys, FileSlice fileSlice, String commitTime)
     {
         if (fileSlice.isEmpty()) {
-            throw new TrinoException(HUDI_FILESYSTEM_ERROR, format("Not a valid file slice: %s", fileSlice.toString()));
+            throw new TrinoException(HUDI_FILESYSTEM_ERROR, format("Not a valid file slice: %s", fileSlice));
         }
 
         if (fileSlice.getLogFiles().findAny().isEmpty()) {

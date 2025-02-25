@@ -427,19 +427,6 @@
         </dependency>
 
         <dependency>
-            <groupId>org.apache.hudi</groupId>
-            <artifactId>hudi-common</artifactId>
-            <version>${dep.hudi.version}</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
             <groupId>org.apache.hbase.thirdparty</groupId>
             <artifactId>hbase-shaded-miscellaneous</artifactId>
             <version>4.1.1</version>
@@ -482,19 +469,6 @@
             <groupId>org.apache.hbase.thirdparty</groupId>
             <artifactId>hbase-unsafe</artifactId>
             <version>4.1.1</version>
-            <scope>test</scope>
-            <exclusions>
-                <exclusion>
-                    <groupId>*</groupId>
-                    <artifactId>*</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.hudi</groupId>
-            <artifactId>hudi-hadoop-common</artifactId>
-            <version>${dep.hudi.version}</version>
             <scope>test</scope>
             <exclusions>
                 <exclusion>
