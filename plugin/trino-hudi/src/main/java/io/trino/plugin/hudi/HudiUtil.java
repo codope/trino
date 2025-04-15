@@ -34,8 +34,10 @@ import org.apache.hudi.common.model.HoodieFileFormat;
 import org.apache.hudi.common.table.HoodieTableMetaClient;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static io.trino.plugin.hive.HiveErrorCode.HIVE_INVALID_METADATA;
 import static io.trino.plugin.hive.util.HiveUtil.checkCondition;
@@ -139,5 +141,48 @@ public final class HudiUtil
                 .setStorage(new TrinoHudiStorage(fileSystem, new TrinoStorageConfiguration()))
                 .setBasePath(basePath)
                 .build();
+    }
+
+    public static List<String> getReferencedColumns(TupleDomain<String> tupleDomain)
+    {
+        if (tupleDomain.getDomains().isEmpty()) {
+            return List.of();
+        }
+        return tupleDomain.getDomains().get().keySet().stream().toList();
+    }
+
+    public static boolean areAllFieldsReferenced(TupleDomain<String> tupleDomain, List<String> sourceFields)
+    {
+        Set<String> referenceColSet = new HashSet<>(getReferencedColumns(tupleDomain));
+        Set<String> sourceFieldSet = new HashSet<>(sourceFields);
+
+        return referenceColSet.containsAll(sourceFieldSet);
+    }
+
+    public static boolean areSomeFieldsReferenced(TupleDomain<String> tupleDomain, List<String> sourceFields)
+    {
+        Set<String> referenceColSet = new HashSet<>(getReferencedColumns(tupleDomain));
+        for (String sourceField : sourceFields) {
+            if (referenceColSet.contains(sourceField)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean areDomainsInOrEqualOnly(TupleDomain<String> tupleDomain, List<String> sourceFields)
+    {
+        // If no recordKeys or no recordKeyDomains, return empty list
+        if (sourceFields == null || sourceFields.isEmpty() || tupleDomain.isAll()) {
+            return false;
+        }
+
+        boolean areReferencedInOrEqual = true;
+        for (String sourceField : sourceFields) {
+            Domain domain = tupleDomain.getDomains().get().get(sourceField);
+            // Check if equals
+            areReferencedInOrEqual &= (domain.isSingleValue() || domain.getValues().isDiscreteSet());
+        }
+        return areReferencedInOrEqual;
     }
 }
