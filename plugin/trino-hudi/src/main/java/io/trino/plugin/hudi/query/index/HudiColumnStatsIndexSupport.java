@@ -5,7 +5,6 @@ import io.airlift.log.Logger;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 import io.trino.parquet.predicate.TupleDomainParquetPredicate;
-import io.trino.plugin.hudi.util.TupleDomainUtils;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.Range;
 import io.trino.spi.predicate.TupleDomain;
@@ -29,6 +28,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static io.trino.parquet.predicate.PredicateUtils.isStatisticsOverflow;
+import static io.trino.plugin.hudi.HudiUtil.areSomeFieldsReferenced;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.DateType.DATE;
@@ -234,6 +234,6 @@ public class HudiColumnStatsIndexSupport
         Map<String, HoodieIndexDefinition>  indexDefinitions = IndexSupportFactory.getIndexDefinitions(metaClient);
         List<String> sourceFields = indexDefinitions.get(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS)
                 .getSourceFields();
-        return TupleDomainUtils.areSomeFieldsReferenced(tupleDomain, sourceFields);
+        return areSomeFieldsReferenced(tupleDomain, sourceFields);
     }
 }
