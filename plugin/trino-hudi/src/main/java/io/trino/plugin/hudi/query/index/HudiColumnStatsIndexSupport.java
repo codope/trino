@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 
 import static io.trino.parquet.predicate.PredicateUtils.isStatisticsOverflow;
 import static io.trino.plugin.hudi.HudiUtil.areSomeFieldsReferenced;
+import static io.trino.plugin.hudi.query.index.IndexSupportFactory.getIndexDefinitions;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.DateType.DATE;
@@ -147,10 +148,6 @@ public class HudiColumnStatsIndexSupport
                 ((GenericRecord) statistics.getMaxValue()).get(0), hasNullValue);
     }
 
-    /**
-     * Get a domain for the ranges defined by each pair of elements from {@code minimums} and {@code maximums}.
-     * Both arrays must have the same length.
-     */
     private static Domain getDomain(String colName, Type type, Object minimum, Object maximum, boolean hasNullValue)
     {
         try {
@@ -231,7 +228,7 @@ public class HudiColumnStatsIndexSupport
 
         // indexDefinition is only available after table version EIGHT
         // Optimization to check if constraints involves the use of at least one colstats index
-        Map<String, HoodieIndexDefinition>  indexDefinitions = IndexSupportFactory.getIndexDefinitions(metaClient);
+        Map<String, HoodieIndexDefinition>  indexDefinitions = getIndexDefinitions(metaClient);
         List<String> sourceFields = indexDefinitions.get(HoodieTableMetadataUtil.PARTITION_NAME_COLUMN_STATS)
                 .getSourceFields();
         return areSomeFieldsReferenced(tupleDomain, sourceFields);
