@@ -48,6 +48,7 @@ public class HudiConfig
     private long perTransactionMetastoreCacheMaximumSize = 2000;
     private boolean queryPartitionFilterRequired;
     private boolean ignoreAbsentPartitions;
+    private boolean metadataEnabled = false;
 
     public List<String> getColumnsToHide()
     {
@@ -215,5 +216,18 @@ public class HudiConfig
     public boolean isIgnoreAbsentPartitions()
     {
         return ignoreAbsentPartitions;
+    }
+
+    @Config("hudi.metadata-enabled")
+    @ConfigDescription("Fetch the list of file names and sizes from Hudi metadata table rather than storage.")
+    public HudiConfig setMetadataEnabled(boolean metadataEnabled)
+    {
+        this.metadataEnabled = metadataEnabled;
+        return this;
+    }
+
+    public boolean isMetadataEnabled()
+    {
+        return this.metadataEnabled;
     }
 }
