@@ -29,6 +29,7 @@ import io.trino.spi.type.Int128;
 import io.trino.spi.type.LongTimestamp;
 import io.trino.spi.type.LongTimestampWithTimeZone;
 import io.trino.spi.type.RowType;
+import io.trino.spi.type.SqlDate;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.VarbinaryType;
 import io.trino.spi.type.VarcharType;
@@ -162,7 +163,7 @@ public class HudiAvroSerializer
                     type.writeLong(output, encodeShortScaledValue(decimal, decimalType.getScale()));
                 }
                 else if (type.equals(DATE)) {
-                    type.writeLong(output, ((Number) value).intValue());
+                    type.writeLong(output, ((SqlDate) value).getDays());
                 }
                 else if (type.equals(TIMESTAMP_MICROS)) {
                     type.writeLong(output, toTrinoTimestamp(((Utf8) value).toString()));
